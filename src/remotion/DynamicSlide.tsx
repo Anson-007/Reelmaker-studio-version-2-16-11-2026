@@ -5,6 +5,7 @@ import {
   spring,
   useCurrentFrame,
   useVideoConfig,
+  Img,
 } from "remotion";
 import { CameraMovement, SlideTransition } from "../types/reel";
 
@@ -308,7 +309,8 @@ export const DynamicSlide: React.FC<DynamicSlideProps> = ({
             opacity: 0.65,
           }}
         >
-          <img
+          <Img
+            crossOrigin="anonymous"
             src={prevImageUrl}
             alt=""
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
@@ -338,7 +340,8 @@ export const DynamicSlide: React.FC<DynamicSlideProps> = ({
             willChange: "transform",
           }}
         >
-          <img
+          <Img
+            crossOrigin="anonymous"
             src={imageUrl}
             alt="Dynamic Slide"
             style={{

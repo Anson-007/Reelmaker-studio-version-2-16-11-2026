@@ -40,12 +40,10 @@ import {
   EyeOff,
   ArrowLeft,
   Sliders,
+  Settings2,
 } from "lucide-react";
 import Link from "next/link";
 
-// ==========================================
-// 10 CURATED MOTION COMBOS
-// ==========================================
 const MOTION_COMBOS: MotionComboPreset[] = [
   {
     id: "whip-jib-reveal",
@@ -146,21 +144,35 @@ const DEFAULT_SLIDES: ReelSlide[] = [
   },
 ];
 
+async function ensureDataUrl(url: string): Promise<string> {
+  if (url.startsWith("data:") || url.startsWith("blob:")) {
+    return url;
+  }
+  try {
+    const res = await fetch(url, { mode: "cors" });
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return url;
+  }
+}
+
 export default function StudioPage() {
   const [slides, setSlides] = useState<ReelSlide[]>(DEFAULT_SLIDES);
   const [previewSlides, setPreviewSlides] =
     useState<ReelSlide[]>(DEFAULT_SLIDES);
 
-  // EDITING MODE: "combo" (1-click preset applied to all) vs "custom" (per-shot tweaking)
   const [motionMode, setMotionMode] = useState<"combo" | "custom">("combo");
   const [activeGlobalComboId, setActiveGlobalComboId] =
     useState<string>("whip-jib-reveal");
 
-  // Instagram Safe Zone Overlay Toggle
   const [showInstagramOverlay, setShowInstagramOverlay] =
     useState<boolean>(false);
 
-  // Online Audio State & Infinite Scrolling
   const [onlineTracks, setOnlineTracks] = useState<AudioTrack[]>([]);
   const [isLoadingMusic, setIsLoadingMusic] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -168,7 +180,6 @@ export default function StudioPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeGenre, setActiveGenre] = useState("all");
 
-  // Selection & Player State (DEFAULT: NO AUDIO)
   const [selectedAudio, setSelectedAudio] = useState<AudioTrack | null>(null);
   const [previewAudio, setPreviewAudio] = useState<AudioTrack | null>(null);
   const [audioVolume, setAudioVolume] = useState<number>(0.8);
@@ -178,9 +189,11 @@ export default function StudioPage() {
     null,
   );
 
-  // Real-time Audio Scrubber State
   const [audioCurrentTime, setAudioCurrentTime] = useState<number>(0);
   const [audioDuration, setAudioDuration] = useState<number>(0);
+
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentFrame, setCurrentFrame] = useState(0);
 
   const [playerKey, setPlayerKey] = useState<number>(0);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -194,7 +207,6 @@ export default function StudioPage() {
   const audioFileInputRef = useRef<HTMLInputElement>(null);
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
   const trackListContainerRef = useRef<HTMLDivElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const fps = 30;
   const totalFrames = Math.max(
@@ -205,121 +217,44 @@ export default function StudioPage() {
     ),
   );
 
-  // =========================================================================
-  // INTERACTIVE WATER-TEXTURE MOUSE TRAIL
-  // =========================================================================
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    let animationFrameId: number;
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
-
-    const handleResize = () => {
-      if (!canvas) return;
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
-    };
-    window.addEventListener("resize", handleResize);
-
-    interface TrailPoint {
-      x: number;
-      y: number;
-      radius: number;
-      alpha: number;
-      color: string;
-      vx: number;
-      vy: number;
-    }
-
-    const points: TrailPoint[] = [];
-    const colors = [
-      "rgba(217, 70, 239, ",
-      "rgba(99, 102, 241, ",
-      "rgba(14, 165, 233, ",
-      "rgba(245, 158, 11, ",
-    ];
-
-    let lastX = 0;
-    let lastY = 0;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const dx = e.clientX - lastX;
-      const dy = e.clientY - lastY;
-      const speed = Math.sqrt(dx * dx + dy * dy);
-
-      const count = Math.min(4, Math.max(1, Math.floor(speed / 8)));
-      for (let i = 0; i < count; i++) {
-        points.push({
-          x: e.clientX + (Math.random() - 0.5) * 20,
-          y: e.clientY + (Math.random() - 0.5) * 20,
-          radius: Math.random() * 55 + 40,
-          alpha: 0.35,
-          color: colors[Math.floor(Math.random() * colors.length)],
-          vx: (Math.random() - 0.5) * 0.8,
-          vy: (Math.random() - 0.5) * 0.8,
-        });
-      }
-
-      lastX = e.clientX;
-      lastY = e.clientY;
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-
-    const render = () => {
-      ctx.clearRect(0, 0, width, height);
-
-      for (let i = points.length - 1; i >= 0; i--) {
-        const p = points[i];
-        p.x += p.vx;
-        p.y += p.vy;
-        p.alpha *= 0.96;
-        p.radius *= 1.015;
-
-        if (p.alpha < 0.005) {
-          points.splice(i, 1);
-          continue;
-        }
-
-        const gradient = ctx.createRadialGradient(
-          p.x,
-          p.y,
-          0,
-          p.x,
-          p.y,
-          p.radius,
-        );
-        gradient.addColorStop(0, `${p.color}${p.alpha})`);
-        gradient.addColorStop(0.5, `${p.color}${p.alpha * 0.4})`);
-        gradient.addColorStop(1, `${p.color}0)`);
-
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      animationFrameId = requestAnimationFrame(render);
-    };
-
-    render();
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      window.removeEventListener("mousemove", handleMouseMove);
-      cancelAnimationFrame(animationFrameId);
-    };
-  }, []);
-
   const formatTime = (secs: number) => {
     if (isNaN(secs) || secs < 0) return "0:00";
     const m = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
     return `${m}:${s < 10 ? "0" : ""}${s}`;
+  };
+
+  useEffect(() => {
+    let animationFrameId: number;
+    const updatePlayerState = () => {
+      if (playerRef.current) {
+        setIsPlaying(playerRef.current.isPlaying());
+        setCurrentFrame(playerRef.current.getCurrentFrame());
+      }
+      animationFrameId = requestAnimationFrame(updatePlayerState);
+    };
+    updatePlayerState();
+    return () => cancelAnimationFrame(animationFrameId);
+  }, []);
+
+  const togglePlayPause = () => {
+    if (playerRef.current) {
+      if (playerRef.current.isPlaying()) {
+        playerRef.current.pause();
+      } else {
+        playerRef.current.play();
+      }
+    }
+  };
+
+  const handleSeekVideo = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!playerRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+    const newFrame = Math.round(percentage * totalFrames);
+    playerRef.current.seekTo(newFrame);
+    setCurrentFrame(newFrame);
   };
 
   const fetchTracks = async (term = "", reset = true) => {
@@ -336,7 +271,6 @@ export default function StudioPage() {
       if (data.tracks && Array.isArray(data.tracks)) {
         setOnlineTracks(data.tracks);
         setHasMore(Boolean(data.hasMore));
-        // NOTE: We deliberately DO NOT auto-set selectedAudio to data.tracks[0]
       }
     } catch (err) {
       console.error("Failed to load tracks", err);
@@ -414,7 +348,6 @@ export default function StudioPage() {
 
     setStatusMessage("Importing photos...");
     const fileList = Array.from(files);
-
     const activeCombo =
       MOTION_COMBOS.find((c) => c.id === activeGlobalComboId) ||
       MOTION_COMBOS[0];
@@ -474,12 +407,10 @@ export default function StudioPage() {
       setAudioCurrentTime(0);
       return;
     }
-
     if (audioPreviewRef.current) {
       audioPreviewRef.current.pause();
       audioPreviewRef.current = null;
     }
-
     const playWithRetry = async (attemptsLeft = 2): Promise<void> => {
       const audio = new Audio();
       audio.preload = "auto";
@@ -487,18 +418,15 @@ export default function StudioPage() {
       audio.src = track.url;
       audio.volume = isMuted ? 0 : audioVolume;
       audioPreviewRef.current = audio;
-
       audio.ontimeupdate = () => {
         setAudioCurrentTime(audio.currentTime);
         if (!isNaN(audio.duration) && audio.duration > 0) {
           setAudioDuration(audio.duration);
         }
       };
-
       audio.onloadedmetadata = () => {
         if (!isNaN(audio.duration)) setAudioDuration(audio.duration);
       };
-
       try {
         setPreviewingAudioId(track.id);
         setAudioCurrentTime(0);
@@ -517,7 +445,6 @@ export default function StudioPage() {
         setPreviewingAudioId(null);
       }
     };
-
     await playWithRetry();
   };
 
@@ -555,616 +482,96 @@ export default function StudioPage() {
 
   const handleExport = async () => {
     if (previewSlides.length === 0) return;
-
     setIsExporting(true);
     setRenderProgress(0);
-    setStatusMessage("Initializing render engine...");
+    setStatusMessage("Preparing local image buffers...");
+    const dimensions = {
+      "1080p": { width: 1080, height: 1920 },
+      "2k": { width: 1440, height: 2560 },
+      "4k": { width: 2160, height: 3840 },
+    }[resolution];
 
     try {
-      const res = await fetch("/api/render", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          slides: previewSlides,
-          resolution,
-          audioUrl: isMuted ? null : previewAudio?.url || null,
-          audioVolume: isMuted ? 0 : audioVolume,
+      const safeSlides = await Promise.all(
+        previewSlides.map(async (slide) => {
+          const safeUrl = await ensureDataUrl(slide.imageUrl);
+          return { ...slide, imageUrl: safeUrl };
         }),
+      );
+      setStatusMessage("Initializing browser GPU encoder...");
+      const { renderMediaOnWeb } = await import("@remotion/web-renderer");
+      const { getBlob } = await renderMediaOnWeb({
+        composition: {
+          id: "ReelComposition",
+          component: ReelComposition as React.ComponentType<any>,
+          durationInFrames: totalFrames,
+          fps: fps,
+          width: dimensions.width,
+          height: dimensions.height,
+        },
+        inputProps: {
+          slides: safeSlides,
+          audioUrl: isMuted ? undefined : previewAudio?.url,
+          audioVolume: isMuted ? 0 : audioVolume,
+        },
+        onProgress: ({ progress }) => {
+          const percent = Math.round(progress * 100);
+          setRenderProgress(percent);
+          setStatusMessage(`Encoding video on GPU (${percent}%)...`);
+        },
       });
 
-      if (!res.ok || !res.body) {
-        throw new Error("Failed to connect to export engine");
-      }
+      const blob = await getBlob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `reel-${resolution}.mp4`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let done = false;
-      let buffer = "";
-
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-
-        if (value) {
-          buffer += decoder.decode(value, { stream: true });
-          const events = buffer.split("\n\n");
-          buffer = events.pop() || "";
-
-          for (const event of events) {
-            const trimmed = event.trim();
-            if (trimmed.startsWith("data: ")) {
-              try {
-                const data = JSON.parse(trimmed.replace("data: ", ""));
-
-                if (typeof data.progress === "number") {
-                  setRenderProgress(data.progress);
-                }
-                if (data.message) {
-                  setStatusMessage(data.message);
-                }
-
-                if (data.status === "complete" && data.downloadUrl) {
-                  const link = document.createElement("a");
-                  link.href = data.downloadUrl;
-                  link.download = `reel-${resolution}.mp4`;
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                  setStatusMessage("Video downloaded successfully!");
-                  setTimeout(() => {
-                    setIsExporting(false);
-                    setRenderProgress(0);
-                  }, 2500);
-                  return;
-                }
-
-                if (data.status === "error") {
-                  throw new Error(data.message || "Render failed");
-                }
-              } catch (parseErr: any) {
-                if (parseErr.message && parseErr.message !== "Render failed") {
-                  // ignore stream chunk boundaries
-                } else {
-                  throw parseErr;
-                }
-              }
-            }
-          }
-        }
-      }
+      setStatusMessage("Video downloaded successfully!");
+      setTimeout(() => {
+        setIsExporting(false);
+        setRenderProgress(0);
+      }, 2500);
     } catch (err: any) {
-      alert(`Export error: ${err.message}`);
-      setStatusMessage(null);
+      console.error("Web render error:", err);
+      alert(`Export error: ${err.message || "Failed to render video"}`);
       setIsExporting(false);
       setRenderProgress(0);
+      setStatusMessage(null);
     }
   };
 
   return (
-    <div className="relative flex h-screen w-screen overflow-hidden bg-[#FDFDFF] font-sans text-slate-800 selection:bg-indigo-500/20 selection:text-indigo-950">
-      {/* BACKGROUND INTERACTIVE WATER-TEXTURE CANVAS */}
-      <canvas
-        ref={canvasRef}
-        className="pointer-events-none fixed inset-0 z-0 opacity-70 mix-blend-multiply"
-      />
-
-      {/* LEFT CONTROLS PANEL */}
-      <aside className="w-[520px] flex flex-col border-r border-slate-200/80 bg-white/80 backdrop-blur-xl shadow-xl z-10">
-        {/* Header */}
-        <div className="border-b border-slate-200/60 p-6 bg-white/40">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Link
-                href="/"
-                className="p-1.5 rounded-xl border border-slate-200/90 text-slate-500 hover:text-slate-900 hover:bg-white shadow-sm transition-all"
-                title="Back to Home"
-              >
-                <ArrowLeft className="w-4 h-4" />
-              </Link>
-              <div>
-                <h1 className="text-xl font-black tracking-tight text-slate-950">
-                  ReelStudio{" "}
-                  <span className="text-indigo-600 font-bold">Pro</span>
-                </h1>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Dynamic 3D Camera Sweeps & Motion Transitions
-                </p>
-              </div>
-            </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50/90 px-3 py-1 text-xs font-bold text-indigo-700 border border-indigo-100/90 shadow-sm">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-              {slides.length} Shots
-            </span>
-          </div>
-
-          {/* Quick Action Bar */}
-          <div className="mt-5 flex flex-wrap gap-2">
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              multiple
-              accept="image/*"
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex-1 min-w-[120px] flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/60 py-2.5 px-3 text-xs font-bold text-indigo-700 hover:bg-indigo-100/60 transition-all shadow-sm"
-            >
-              <UploadCloud className="w-4 h-4 text-indigo-600" />
-              Upload Photos
-            </button>
-
-            {/* AUDIO BUTTON: Select / Change Track */}
-            <button
-              onClick={() => setIsAudioDrawerOpen(true)}
-              className={`flex items-center gap-1.5 rounded-xl border py-2.5 px-3 text-xs font-semibold transition-all shadow-sm ${
-                previewAudio && !isMuted
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100/70"
-                  : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
-              }`}
-            >
-              <Music
-                className={`w-3.5 h-3.5 ${
-                  previewAudio && !isMuted
-                    ? "text-emerald-600"
-                    : "text-slate-500"
-                }`}
-              />
-              {previewAudio
-                ? isMuted
-                  ? "Audio Muted"
-                  : "Sound Attached"
-                : "Add Music"}
-            </button>
-
-            {/* AUDIO TOGGLE (MUTE / UNMUTE) */}
-            {previewAudio && (
-              <button
-                onClick={() => {
-                  setIsMuted((prev) => !prev);
-                  setPlayerKey((k) => k + 1);
-                }}
-                className={`p-2.5 rounded-xl border transition-all shadow-sm ${
-                  isMuted
-                    ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                    : "border-slate-200 bg-white/80 text-slate-600 hover:bg-white"
-                }`}
-                title={isMuted ? "Unmute Audio" : "Mute Audio"}
-              >
-                {isMuted ? (
-                  <VolumeX className="w-3.5 h-3.5" />
-                ) : (
-                  <Volume2 className="w-3.5 h-3.5" />
-                )}
-              </button>
-            )}
-
-            {/* INSTAGRAM SAFE ZONE TOGGLE */}
-            <button
-              onClick={() => setShowInstagramOverlay((prev) => !prev)}
-              className={`flex items-center gap-1.5 rounded-xl border py-2.5 px-3 text-xs font-semibold transition-all shadow-sm ${
-                showInstagramOverlay
-                  ? "border-pink-300 bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-pink-200"
-                  : "border-slate-200 bg-white/80 text-slate-700 hover:bg-white"
-              }`}
-              title="Toggle Instagram Reels safe zone overlay"
-            >
-              {showInstagramOverlay ? (
-                <>
-                  <EyeOff className="w-3.5 h-3.5" />
-                  Hide IG
-                </>
-              ) : (
-                <>
-                  <Eye className="w-3.5 h-3.5 text-pink-600" />
-                  Instagram UI
-                </>
-              )}
-            </button>
-
-            <select
-              value={resolution}
-              onChange={(e) => setResolution(e.target.value as any)}
-              className="rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-bold text-slate-700 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
-            >
-              <option value="1080p">1080p (FHD)</option>
-              <option value="2k">2K (QHD)</option>
-              <option value="4k">4K (Ultra HD)</option>
-            </select>
-          </div>
-
-          {/* TWO-MODE SELECTOR */}
-          <div className="mt-4 p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/80 flex gap-1">
-            <button
-              onClick={() => {
-                setMotionMode("combo");
-                applyGlobalCombo(activeGlobalComboId);
-              }}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
-                motionMode === "combo"
-                  ? "bg-white text-indigo-700 shadow-sm shadow-indigo-500/10 border border-slate-200/60"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <Zap className="w-3.5 h-3.5 text-indigo-600" />
-              1-Click Motion Combo (All Shots)
-            </button>
-
-            <button
-              onClick={() => setMotionMode("custom")}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
-                motionMode === "custom"
-                  ? "bg-white text-slate-900 shadow-sm border border-slate-200/60"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <Sliders className="w-3.5 h-3.5 text-slate-600" />
-              Custom Per-Shot Settings
-            </button>
-          </div>
-
-          {/* GLOBAL COMBO SELECTOR */}
-          {motionMode === "combo" && (
-            <div className="mt-3 p-3.5 rounded-2xl bg-gradient-to-r from-indigo-50/90 via-violet-50/60 to-pink-50/40 border border-indigo-100 shadow-sm animate-in fade-in">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3 text-indigo-600" /> Active Global
-                  Motion Combo
-                </span>
-                <span className="text-[10px] text-indigo-600 font-semibold bg-white/90 px-2 py-0.5 rounded-md border border-indigo-100">
-                  Applies to all {slides.length} shots
-                </span>
-              </div>
-              <select
-                value={activeGlobalComboId}
-                onChange={(e) => applyGlobalCombo(e.target.value)}
-                className="w-full rounded-xl border border-indigo-200 bg-white/95 px-3 py-2 text-xs font-bold text-indigo-950 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
-              >
-                {MOTION_COMBOS.map((combo) => (
-                  <option key={combo.id} value={combo.id}>
-                    ⚡ {combo.name} ({combo.description})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Audio Info pill */}
-          {previewAudio && (
-            <div className="mt-3 flex items-center justify-between rounded-xl bg-slate-50/90 border border-slate-200/80 px-3 py-2 text-xs">
-              <div className="flex items-center gap-2 overflow-hidden">
-                <span
-                  className={`flex h-5 w-5 items-center justify-center rounded-full ${
-                    isMuted
-                      ? "bg-amber-100 text-amber-700"
-                      : "bg-emerald-100 text-emerald-700"
-                  }`}
-                >
-                  {isMuted ? (
-                    <VolumeX className="w-3 h-3" />
-                  ) : (
-                    <Music className="w-3 h-3" />
-                  )}
-                </span>
-                <div className="truncate">
-                  <p className="font-bold text-slate-800 truncate">
-                    {previewAudio.title} {isMuted && "(Muted)"}
-                  </p>
-                  <p className="text-[10px] text-slate-400">
-                    {previewAudio.artist} • {previewAudio.tag}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 ml-2">
-                <button
-                  onClick={() => setIsAudioDrawerOpen(true)}
-                  className="text-[11px] font-semibold text-indigo-600 hover:underline"
-                >
-                  Change
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedAudio(null);
-                    setPreviewAudio(null);
-                    setPlayerKey((k) => k + 1);
-                  }}
-                  className="p-1 text-slate-400 hover:text-red-500 rounded"
-                  title="Remove audio"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Scrollable Shot List */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {slides.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-slate-200 rounded-3xl p-6 text-center bg-white/40">
-              <UploadCloud className="w-10 h-10 text-slate-300 mb-2" />
-              <p className="text-sm font-bold text-slate-700">
-                No photos loaded
-              </p>
-              <p className="text-xs text-slate-400 mt-1">
-                Upload 3 to 8 photos to build your reel.
-              </p>
-            </div>
-          ) : (
-            slides.map((slide, index) => (
-              <div
-                key={slide.id}
-                className="group relative rounded-2xl border border-slate-200/90 bg-white/90 backdrop-blur-sm p-4 shadow-sm hover:shadow-md hover:border-slate-300 transition-all"
-              >
-                <div className="flex items-center justify-between mb-3.5">
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-700">
-                      {index + 1}
-                    </span>
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Shot {index + 1}
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={() => removeSlide(slide.id)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50"
-                    title="Remove Shot"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="flex gap-4">
-                  <div className="relative h-28 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-slate-100 bg-slate-100 shadow-inner">
-                    <img
-                      src={slide.imageUrl}
-                      alt={`Shot ${index + 1}`}
-                      className="h-full w-full object-cover"
-                    />
-                  </div>
-
-                  <div className="flex-1 space-y-2.5">
-                    {motionMode === "combo" ? (
-                      <div className="p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-100/80">
-                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-800">
-                          <Zap className="w-3.5 h-3.5 text-indigo-600" />
-                          {MOTION_COMBOS.find(
-                            (c) => c.id === activeGlobalComboId,
-                          )?.name || "Preset Combo Active"}
-                        </div>
-                        <p className="text-[10px] text-slate-500 mt-0.5">
-                          Unified 3D animation applied across all shots.
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        {/* Camera Movement */}
-                        <div>
-                          <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                            <Camera className="w-3 h-3 text-slate-400" /> Camera
-                            Drift
-                          </label>
-                          <select
-                            value={slide.cameraMovement}
-                            onChange={(e) =>
-                              updateSlide(slide.id, {
-                                cameraMovement: e.target
-                                  .value as CameraMovement,
-                              })
-                            }
-                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                          >
-                            <optgroup label="3D Depth">
-                              <option value="lowAngleJibPush">
-                                Low-Angle Jib Push
-                              </option>
-                              <option value="parallaxDepthPush">
-                                Parallax 2.5D Depth Push
-                              </option>
-                              <option value="vertigoWarp">
-                                Vertigo Hitchcock Warp
-                              </option>
-                              <option value="droneFlyover">
-                                Cinematic Drone Flyover
-                              </option>
-                            </optgroup>
-                            <optgroup label="Orbits & Sweeps">
-                              <option value="arcSweepReveal">
-                                Arc Sweep Reveal
-                              </option>
-                              <option value="spiralDive">
-                                Spiral Push & Dive
-                              </option>
-                              <option value="sCurvePan">
-                                Dynamic S-Curve Ease Pan
-                              </option>
-                              <option value="craneRise">
-                                Cinematic Crane Rise
-                              </option>
-                            </optgroup>
-                            <optgroup label="Organic Drift">
-                              <option value="handheldBreathing">
-                                Handheld Gimbal Breathing
-                              </option>
-                              <option value="steadicamGlide">
-                                Wobble Steadicam Glide
-                              </option>
-                              <option value="zeroGFloat">
-                                Zero-G Orbital Float
-                              </option>
-                              <option value="slowZoomIn">
-                                Slow Cinematic Zoom In
-                              </option>
-                            </optgroup>
-                          </select>
-                        </div>
-
-                        {/* Transition Entrance */}
-                        <div>
-                          <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                            <Sparkles className="w-3 h-3 text-slate-400" />{" "}
-                            Transition Into Shot
-                          </label>
-                          <select
-                            value={slide.transition}
-                            onChange={(e) =>
-                              updateSlide(slide.id, {
-                                transition: e.target.value as SlideTransition,
-                              })
-                            }
-                            className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                          >
-                            <optgroup label="3D Dimension">
-                              <option value="whipZoom">
-                                Dynamic Whip Zoom-In
-                              </option>
-                              <option value="skewSlide">
-                                Kinetic Skew Slide
-                              </option>
-                              <option value="curvedSlider3D">
-                                3D Curved Panoramic Slider
-                              </option>
-                              <option value="carousel3DSpin">
-                                3D Spinning Cube Carousel
-                              </option>
-                              <option value="carousel3D">
-                                3D Revolving Tunnel Card
-                              </option>
-                              <option value="flip3D">
-                                Cinematic 3D Card Flip
-                              </option>
-                              <option value="dropBounce">
-                                Gravity Drop & Bounce
-                              </option>
-                            </optgroup>
-                            <optgroup label="Dynamic Zooms">
-                              <option value="spiralVortex">
-                                Spiral Vortex Dive
-                              </option>
-                              <option value="spinZoom">
-                                Vortex Spin & Punch
-                              </option>
-                            </optgroup>
-                            <optgroup label="Optical & Cuts">
-                              <option value="exposureGlow">
-                                Exposure Glow Bloom Flash
-                              </option>
-                              <option value="opticalDissolve">
-                                Optical Contrast Film Dissolve
-                              </option>
-                              <option value="crossFade">
-                                Smooth Soft Cross-Fade
-                              </option>
-                              <option value="none">
-                                Direct Cut (No Transition)
-                              </option>
-                            </optgroup>
-                          </select>
-                        </div>
-                      </>
-                    )}
-
-                    {/* Duration Controller */}
-                    <div className="flex items-center gap-2 pt-0.5">
-                      <Clock className="w-3 h-3 text-slate-400" />
-                      <span className="text-[11px] font-semibold text-slate-500">
-                        Duration:
-                      </span>
-                      <select
-                        value={slide.durationInSeconds}
-                        onChange={(e) =>
-                          updateSlide(slide.id, {
-                            durationInSeconds: Number(e.target.value),
-                          })
-                        }
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-700 focus:outline-none"
-                      >
-                        <option value={3}>3.0s</option>
-                        <option value={4}>4.0s (Recommended)</option>
-                        <option value={5}>5.0s</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* Bottom Actions */}
-        <div className="border-t border-slate-200/80 p-5 bg-white/90 backdrop-blur space-y-2.5">
-          {hasUnsavedChanges && (
-            <div className="flex items-center justify-between rounded-xl bg-amber-50 p-2.5 px-3 border border-amber-200/80 text-xs text-amber-800">
-              <span className="flex items-center gap-1.5 font-bold">
-                <AlertCircle className="w-4 h-4 text-amber-600" /> Changes made
-                to shots
-              </span>
-              <span className="text-[11px] font-semibold text-amber-700">
-                Click Update Preview
-              </span>
-            </div>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              onClick={handleUpdatePreview}
-              className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 px-4 text-xs font-bold transition-all shadow-sm ${
-                hasUnsavedChanges
-                  ? "bg-amber-500 hover:bg-amber-600 text-white ring-2 ring-amber-400/40"
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200"
-              }`}
-            >
-              <RotateCw className="w-3.5 h-3.5" />
-              Update Preview
-            </button>
-
-            <button
-              onClick={handleExport}
-              disabled={isExporting || previewSlides.length === 0}
-              className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-4 text-xs font-bold shadow-md shadow-indigo-600/25 disabled:opacity-50 transition-all"
-            >
-              <Download className="w-3.5 h-3.5" />
-              {isExporting
-                ? "Exporting..."
-                : `Export ${resolution.toUpperCase()}`}
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* CENTER PREVIEW STAGE */}
-      <main className="flex-1 flex flex-col items-center justify-center p-6 relative z-10">
-        <div className="relative flex flex-col items-center w-full max-w-[460px]">
+    <div className="relative flex flex-col lg:flex-row h-[100dvh] w-full overflow-hidden bg-gradient-to-b from-indigo-950 via-slate-900 to-black lg:bg-none lg:bg-[#FDFDFF] font-sans text-slate-800 selection:bg-indigo-500/20 selection:text-indigo-950">
+      {/* 1. TOP STAGE: CAPCUT-STYLE CLEAN VIDEO PLAYER */}
+      <main className="order-1 lg:order-2 h-[48dvh] lg:h-full w-full flex-1 flex flex-col items-center justify-center pt-2 pb-0 px-2 lg:p-6 relative z-10 lg:bg-slate-100">
+        <div className="relative flex flex-col items-center justify-center w-full h-full max-w-[460px]">
           {isExporting ? (
-            <div className="w-full mb-3 bg-white/95 backdrop-blur-xl border border-indigo-100 rounded-2xl p-4 shadow-xl shadow-indigo-500/5 transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-2">
-                <span className="flex items-center gap-2 text-indigo-600">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-indigo-600"></span>
-                  </span>
-                  Exporting {resolution.toUpperCase()} Reel
+            <div className="w-full max-w-[320px] lg:max-w-full mb-2 lg:mb-3 bg-white/10 lg:bg-white/95 backdrop-blur-xl border border-white/20 lg:border-indigo-100 rounded-2xl p-4 shadow-2xl lg:shadow-xl transition-all">
+              <div className="flex items-center justify-between text-xs font-bold text-white lg:text-slate-800 mb-2">
+                <span className="flex items-center gap-2 text-indigo-300 lg:text-indigo-600">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> GPU Export
                 </span>
-                <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-lg border border-indigo-100">
+                <span className="lg:font-mono lg:text-indigo-700 lg:bg-indigo-50 lg:px-2.5 lg:py-0.5 lg:rounded-lg lg:border lg:border-indigo-100">
                   {renderProgress}%
                 </span>
               </div>
-
-              <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/80">
+              <div className="w-full h-1.5 lg:h-2.5 bg-slate-800 lg:bg-slate-100 rounded-full overflow-hidden lg:p-0.5 lg:border lg:border-slate-200">
                 <div
-                  className="h-full bg-gradient-to-r from-indigo-500 via-indigo-600 to-violet-600 rounded-full transition-all duration-300 ease-out shadow-sm"
+                  className="h-full bg-gradient-to-r from-indigo-500 to-pink-500 lg:to-indigo-600 rounded-full transition-all duration-300 ease-out"
                   style={{ width: `${Math.max(4, renderProgress)}%` }}
                 />
               </div>
-
-              <p className="text-[11px] text-slate-500 text-center mt-2 font-medium truncate">
+              <p className="text-[10px] lg:text-[11px] text-slate-300 lg:text-slate-500 text-center mt-2 truncate">
                 {statusMessage}
               </p>
             </div>
           ) : (
-            <div className="mb-2.5 flex items-center gap-2 rounded-full bg-white/90 backdrop-blur border border-slate-200/80 px-4 py-1 shadow-sm text-xs font-semibold text-slate-600">
+            <div className="hidden lg:flex mb-2.5 items-center gap-2 rounded-full bg-white/90 backdrop-blur border border-slate-200/80 px-4 py-1 shadow-sm text-xs font-semibold text-slate-600">
               <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
               <span>
                 9:16 Reel Stage • {(totalFrames / fps).toFixed(1)}s total
@@ -1173,7 +580,7 @@ export default function StudioPage() {
           )}
 
           {/* 9:16 SCREEN VIEWPORT */}
-          <div className="h-[84vh] aspect-[9/16] rounded-[30px] overflow-hidden bg-black relative flex items-center justify-center shadow-2xl ring-1 ring-slate-900/10">
+          <div className="h-full max-h-[85%] lg:max-h-[80vh] aspect-[9/16] rounded-2xl lg:rounded-[24px] overflow-hidden bg-black relative flex items-center justify-center shadow-2xl ring-1 ring-white/10 lg:ring-slate-900/10">
             {previewSlides.length > 0 ? (
               <>
                 <Player
@@ -1189,57 +596,50 @@ export default function StudioPage() {
                   fps={fps}
                   compositionWidth={1080}
                   compositionHeight={1920}
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                  }}
-                  controls
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  controls={false}
                   loop
                   clickToPlay
                   acknowledgeRemotionLicense
                 />
 
-                {/* INSTAGRAM SAFE ZONE OVERLAY LAYER */}
+                {/* IG OVERLAY */}
                 {showInstagramOverlay && (
-                  <div className="absolute inset-0 pointer-events-none z-30 flex flex-col justify-between p-4 pt-6 pb-5 font-sans select-none animate-in fade-in duration-200">
-                    <div className="w-full flex items-center justify-between text-white/95 drop-shadow-md px-1">
-                      <span className="text-xs font-bold tracking-tight">
+                  <div className="absolute inset-0 pointer-events-none z-30 flex flex-col justify-between p-3 lg:p-4 pt-4 lg:pt-6 pb-4 lg:pb-5 font-sans select-none">
+                    <div className="w-full flex items-center justify-between text-white/95 drop-shadow-md px-1 lg:px-2">
+                      <span className="text-[10px] lg:text-xs font-bold tracking-tight">
                         Reels
                       </span>
-                      <Camera className="w-5 h-5 text-white stroke-[2.2]" />
+                      <Camera className="w-4 h-4 lg:w-5 lg:h-5 text-white stroke-[2.2]" />
                     </div>
 
-                    <div className="absolute top-14 left-3 right-3 border-b border-dashed border-red-400/40 text-[9px] font-mono text-red-300 text-center pb-0.5 tracking-wider">
-                      TOP SAFE ZONE (HEADER CLEARANCE)
+                    <div className="absolute top-10 lg:top-14 left-2 right-2 lg:left-3 lg:right-3 border-b border-dashed border-red-400/40 text-[7px] lg:text-[9px] font-mono text-red-300 text-center pb-0.5 tracking-wider">
+                      TOP SAFE ZONE
                     </div>
 
-                    <div className="w-full flex items-end justify-between pb-3">
-                      <div className="flex-1 max-w-[76%] text-white drop-shadow-md space-y-1.5 pl-1">
-                        <div className="flex items-center gap-2">
-                          <div className="h-7 w-7 rounded-full border border-white/60 bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 p-[1.5px] flex items-center justify-center">
-                            <div className="h-full w-full rounded-full bg-slate-900 overflow-hidden flex items-center justify-center">
-                              <span className="text-[9px] font-bold text-white">
+                    <div className="w-full flex items-end justify-between pb-2 lg:pb-3 h-full">
+                      <div className="flex-1 max-w-[70%] lg:max-w-[76%] text-white drop-shadow-md space-y-1.5 pl-1 mb-2 lg:mb-0">
+                        <div className="flex items-center gap-1.5 lg:gap-2">
+                          <div className="h-6 w-6 lg:h-7 lg:w-7 rounded-full border border-white/60 bg-gradient-to-tr from-amber-500 to-purple-600 p-[1.5px]">
+                            <div className="h-full w-full rounded-full bg-slate-900 flex items-center justify-center">
+                              <span className="text-[7px] lg:text-[9px] font-bold text-white">
                                 RS
                               </span>
                             </div>
                           </div>
-                          <span className="text-[11px] font-bold text-white">
+                          <span className="text-[11px] lg:text-[11px] font-bold text-white">
                             reelstudio.ai
                           </span>
-                          <span className="text-[9px] font-semibold border border-white/70 px-2 py-0.2 rounded-md backdrop-blur-sm bg-black/20">
+                          <span className="text-[7px] lg:text-[9px] font-semibold border border-white/70 px-1.5 lg:px-2 py-[1px] rounded-md bg-black/20 backdrop-blur-sm">
                             Follow
                           </span>
                         </div>
-
-                        <p className="text-[10px] leading-tight text-white/95 line-clamp-2">
-                          Cinematic 3D Spatial Transitions & Custom Motion in
-                          9:16 ✨
+                        <p className="text-[10px] lg:text-[10px] leading-tight text-white/95 line-clamp-2">
+                          Cinematic 3D Spatial Transitions & Custom Motion ✨
                         </p>
-
-                        <div className="flex items-center gap-1.5 text-[9px] text-white/90 pt-0.5">
-                          <Music className="w-3 h-3 text-white" />
-                          <span className="truncate max-w-[190px] font-medium">
+                        <div className="flex items-center gap-1 lg:gap-1.5 text-[7px] lg:text-[9px] text-white/90 pt-0.5">
+                          <Music className="w-2.5 h-2.5 lg:w-3 lg:h-3 text-white" />
+                          <span className="truncate max-w-[150px] lg:max-w-[190px] font-medium">
                             {previewAudio && !isMuted
                               ? `${previewAudio.title} • ${previewAudio.artist}`
                               : "No Audio / Studio Silent"}
@@ -1247,311 +647,508 @@ export default function StudioPage() {
                         </div>
                       </div>
 
-                      <div className="flex flex-col items-center gap-3.5 text-white drop-shadow-lg pr-1">
+                      <div className="flex flex-col items-center gap-2 lg:gap-3.5 text-white drop-shadow-lg pr-1">
                         <div className="flex flex-col items-center gap-0.5">
-                          <Heart className="w-5 h-5 text-white stroke-[2.2]" />
-                          <span className="text-[9px] font-semibold text-white tracking-tight">
+                          <Heart className="w-4 h-4 lg:w-5 lg:h-5 text-white stroke-[2.2]" />
+                          <span className="text-[7px] lg:text-[9px] font-semibold tracking-tight">
                             124K
                           </span>
                         </div>
                         <div className="flex flex-col items-center gap-0.5">
-                          <MessageCircle className="w-5 h-5 text-white stroke-[2.2] -rotate-90" />
-                          <span className="text-[9px] font-semibold text-white tracking-tight">
+                          <MessageCircle className="w-4 h-4 lg:w-5 lg:h-5 text-white stroke-[2.2] -rotate-90" />
+                          <span className="text-[7px] lg:text-[9px] font-semibold tracking-tight">
                             1,842
                           </span>
                         </div>
                         <div className="flex flex-col items-center gap-0.5">
-                          <Send className="w-5 h-5 text-white stroke-[2.2]" />
-                          <span className="text-[9px] font-semibold text-white tracking-tight">
+                          <Send className="w-4 h-4 lg:w-5 lg:h-5 text-white stroke-[2.2]" />
+                          <span className="text-[7px] lg:text-[9px] font-semibold tracking-tight hidden lg:block">
                             48.2K
                           </span>
                         </div>
-                        <Bookmark className="w-4 h-4 text-white stroke-[2.2]" />
-                        <MoreHorizontal className="w-4 h-4 text-white stroke-[2.4]" />
-                        <div className="pt-0.5">
-                          <div className="relative h-7 w-7 rounded-full border-2 border-slate-900 bg-slate-900 flex items-center justify-center shadow-lg ring-1 ring-white/40 animate-spin [animation-duration:5s]">
+                        <Bookmark className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-white stroke-[2.2]" />
+                        <MoreHorizontal className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-white stroke-[2.4]" />
+                        <div className="pt-0.5 hidden lg:block">
+                          <div className="relative h-6 w-6 lg:h-7 lg:w-7 rounded-full border-2 border-slate-900 bg-slate-900 flex items-center justify-center animate-spin [animation-duration:5s] ring-1 ring-white/40 shadow-lg">
                             <Disc3 className="w-full h-full text-white/80" />
                             <div className="absolute h-2.5 w-2.5 rounded-full bg-slate-800 border border-white/60" />
                           </div>
                         </div>
                       </div>
                     </div>
-
-                    <div className="absolute bottom-4 left-3 right-3 border-t border-dashed border-red-400/40 text-[9px] font-mono text-red-300 text-center pt-0.5 tracking-wider">
-                      BOTTOM SAFE ZONE (SCRUBBER & CAPTIONS)
-                    </div>
                   </div>
                 )}
               </>
             ) : (
-              <div className="h-full w-full flex items-center justify-center text-slate-500 text-xs font-medium">
-                Upload photos to view reel preview
+              <div className="h-full w-full flex items-center justify-center text-slate-500 text-xs font-medium bg-slate-100">
+                Upload photos to preview
               </div>
             )}
+          </div>
+
+          {/* CUSTOM CLEAN PLAYER TOOLBAR (CapCut Style) */}
+          <div className="w-full max-w-[90%] lg:max-w-[80%] flex flex-col gap-2 mt-3 lg:mt-4">
+            <div
+              className="w-full h-1.5 lg:h-2 bg-white/20 lg:bg-slate-200 rounded-full cursor-pointer relative overflow-hidden"
+              onClick={handleSeekVideo}
+            >
+              <div
+                className="h-full bg-indigo-500 rounded-full transition-all duration-75"
+                style={{ width: `${(currentFrame / totalFrames) * 100}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <button
+                onClick={togglePlayPause}
+                className="w-8 h-8 lg:w-9 lg:h-9 rounded-full bg-white/10 lg:bg-white hover:bg-white/20 lg:hover:bg-slate-50 flex items-center justify-center text-white lg:text-slate-700 backdrop-blur lg:shadow-sm lg:border lg:border-slate-200 transition-colors cursor-pointer"
+              >
+                {isPlaying ? (
+                  <Pause className="w-4 h-4 fill-white lg:fill-slate-700" />
+                ) : (
+                  <Play className="w-4 h-4 fill-white lg:fill-slate-700 ml-0.5" />
+                )}
+              </button>
+              <span className="text-[11px] lg:text-xs font-mono font-medium text-slate-300 lg:text-slate-500">
+                {formatTime(currentFrame / fps)} /{" "}
+                {formatTime(totalFrames / fps)}
+              </span>
+            </div>
           </div>
         </div>
       </main>
 
-      {/* RIGHT DRAWER: MUSIC CATALOG */}
-      {isAudioDrawerOpen && (
-        <aside className="w-[410px] h-full bg-white/95 backdrop-blur-xl border-l border-slate-200/80 shadow-2xl flex flex-col z-30 transition-all animate-in slide-in-from-right duration-300">
-          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                <Flame className="w-4 h-4 text-indigo-600" />
+      {/* 2. BOTTOM EDITOR PANEL (Scrollable Bottom Sheet Style) */}
+      <aside className="order-2 lg:order-1 h-[52dvh] lg:h-full w-full lg:w-[480px] flex flex-col bg-white shadow-[0_-10px_40px_rgba(0,0,0,0.2)] lg:shadow-xl lg:border-r border-slate-200/80 rounded-t-[2rem] lg:rounded-none relative z-20 overflow-hidden">
+        {/* ALL EDITOR CONTENT WRAPPED IN SCROLLABLE AREA */}
+        <div className="flex-1 overflow-y-auto w-full pb-24 lg:pb-32 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          {/* Sticky Header Section */}
+          <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-100 pt-4 pb-4 px-4 lg:px-6 space-y-4">
+            {/* Title Row */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/"
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </Link>
+                <h1 className="text-base lg:text-xl font-black tracking-tight text-slate-950">
+                  ReelStudio{" "}
+                  <span className="text-indigo-600 font-bold">Pro</span>
+                </h1>
+              </div>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-[10px] font-bold text-slate-600 border border-slate-200">
+                {slides.length} Shots
               </span>
-              <div>
-                <h2 className="text-sm font-bold text-slate-900">
-                  Online Music Library
-                </h2>
-                <p className="text-[11px] text-slate-400">
-                  Royalty-Free Audio Stream
-                </p>
-              </div>
             </div>
-            <button
-              onClick={() => {
-                if (audioPreviewRef.current) audioPreviewRef.current.pause();
-                setPreviewingAudioId(null);
-                setIsAudioDrawerOpen(false);
-              }}
-              className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
 
-          <div className="px-5 py-3 bg-slate-50/70 border-b border-slate-100 flex items-center gap-3">
-            <Volume2 className="w-4 h-4 text-slate-500" />
-            <div className="flex-1">
-              <div className="flex justify-between text-[11px] font-semibold text-slate-600 mb-1">
-                <span>Volume</span>
-                <span>{Math.round(audioVolume * 100)}%</span>
-              </div>
+            {/* Horizontally Scrollable Tool Pills */}
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 lg:mx-0 lg:px-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={audioVolume}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value);
-                  setAudioVolume(val);
-                  if (audioPreviewRef.current)
-                    audioPreviewRef.current.volume = val;
-                }}
-                className="w-full accent-indigo-600 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                multiple
+                accept="image/*"
+                className="hidden"
               />
-            </div>
-          </div>
-
-          <div className="p-4 border-b border-slate-100 space-y-2.5">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search tracks, genres, vibes..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) =>
-                  e.key === "Enter" && fetchTracks(searchQuery, true)
-                }
-                className="w-full rounded-xl border border-slate-200 bg-white/90 pl-8 pr-16 py-2 text-xs text-slate-800 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-              />
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-3" />
               <button
-                onClick={() => fetchTracks(searchQuery, true)}
-                className="absolute right-1.5 top-1.5 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-indigo-700 transition"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex-shrink-0 flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 py-1.5 px-3.5 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100 shadow-sm cursor-pointer whitespace-nowrap"
               >
-                Search
+                <UploadCloud className="w-3.5 h-3.5" /> Photos
+              </button>
+
+              <button
+                onClick={() => setIsAudioDrawerOpen(true)}
+                className={`flex-shrink-0 flex items-center gap-1.5 rounded-full border py-1.5 px-3.5 text-[11px] font-bold whitespace-nowrap cursor-pointer ${
+                  previewAudio && !isMuted
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-slate-200 bg-slate-50 text-slate-700"
+                }`}
+              >
+                <Music
+                  className={`w-3.5 h-3.5 ${previewAudio && !isMuted ? "text-emerald-600" : ""}`}
+                />
+                {previewAudio ? (isMuted ? "Muted" : "Audio Set") : "Add Music"}
+              </button>
+
+              <button
+                onClick={() => setShowInstagramOverlay(!showInstagramOverlay)}
+                className={`flex-shrink-0 flex items-center gap-1.5 rounded-full border py-1.5 px-3.5 text-[11px] font-bold whitespace-nowrap cursor-pointer ${
+                  showInstagramOverlay
+                    ? "border-pink-300 bg-pink-500 text-white"
+                    : "border-slate-200 bg-slate-50 text-slate-700"
+                }`}
+              >
+                {showInstagramOverlay ? (
+                  <EyeOff className="w-3.5 h-3.5" />
+                ) : (
+                  <Eye className="w-3.5 h-3.5 text-pink-500" />
+                )}{" "}
+                IG UI
+              </button>
+
+              <div className="flex-shrink-0 relative">
+                <select
+                  value={resolution}
+                  onChange={(e) => setResolution(e.target.value as any)}
+                  className="appearance-none rounded-full border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-[11px] font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 cursor-pointer pr-7"
+                >
+                  <option value="1080p">1080p</option>
+                  <option value="2k">2K</option>
+                  <option value="4k">4K</option>
+                </select>
+                <Settings2 className="w-3 h-3 text-slate-400 absolute right-2.5 top-2 pointer-events-none" />
+              </div>
+            </div>
+
+            {/* Combo / Custom Switcher */}
+            <div className="bg-slate-100 rounded-xl p-1 flex">
+              <button
+                onClick={() => {
+                  setMotionMode("combo");
+                  applyGlobalCombo(activeGlobalComboId);
+                }}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                  motionMode === "combo"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-500"
+                }`}
+              >
+                <Zap className="w-3 h-3" /> 1-Click Combo
+              </button>
+              <button
+                onClick={() => setMotionMode("custom")}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                  motionMode === "custom"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500"
+                }`}
+              >
+                <Sliders className="w-3 h-3" /> Custom
               </button>
             </div>
+          </div>
 
-            <div className="flex gap-1.5 overflow-x-auto pb-0.5 text-[11px] no-scrollbar">
-              {[
-                { label: "All", query: "" },
-                { label: "Phonk", query: "phonk" },
-                { label: "Lo-Fi", query: "lofi" },
-                { label: "Chill", query: "chill" },
-                { label: "Cinematic", query: "cinematic" },
-                { label: "Upbeat", query: "upbeat" },
-              ].map((chip) => (
-                <button
-                  key={chip.label}
-                  onClick={() => {
-                    setActiveGenre(chip.label);
-                    setSearchQuery(chip.query);
-                    fetchTracks(chip.query, true);
-                  }}
-                  className={`px-2.5 py-1 rounded-full font-bold transition whitespace-nowrap text-xs ${
-                    activeGenre === chip.label
-                      ? "bg-indigo-600 text-white shadow-sm"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
+          <div className="px-4 lg:px-6 pt-4 space-y-4">
+            {/* Global Combo Dropdown (Only shows if combo is active) */}
+            {motionMode === "combo" && (
+              <div className="p-3 rounded-xl bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100">
+                <span className="block text-[9px] font-bold text-indigo-700 uppercase tracking-wider mb-1.5">
+                  Apply to all shots
+                </span>
+                <select
+                  value={activeGlobalComboId}
+                  onChange={(e) => applyGlobalCombo(e.target.value)}
+                  className="w-full rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-indigo-950 focus:outline-none cursor-pointer"
                 >
-                  {chip.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50/50">
-            <input
-              type="file"
-              ref={audioFileInputRef}
-              accept="audio/*"
-              onChange={handleCustomAudioUpload}
-              className="hidden"
-            />
-            <button
-              onClick={() => audioFileInputRef.current?.click()}
-              className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border border-dashed border-slate-300 text-xs font-semibold text-slate-600 hover:bg-white transition-colors"
-            >
-              <UploadCloud className="w-3.5 h-3.5 text-slate-500" />
-              Upload local MP3 instead
-            </button>
-          </div>
-
-          <div
-            ref={trackListContainerRef}
-            onScroll={handleScroll}
-            className="flex-1 overflow-y-auto p-4 space-y-3"
-          >
-            {isLoadingMusic ? (
-              <div className="flex flex-col items-center justify-center h-48 text-slate-400 text-xs gap-2">
-                <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
-                <span>Loading tracks...</span>
+                  {MOTION_COMBOS.map((combo) => (
+                    <option key={combo.id} value={combo.id}>
+                      ⚡ {combo.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-            ) : onlineTracks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 text-slate-400 text-xs">
-                <span>No tracks found for "{searchQuery}"</span>
-              </div>
-            ) : (
-              <>
-                {onlineTracks.map((track) => {
-                  const isSelected = selectedAudio?.id === track.id;
-                  const isPreviewing = previewingAudioId === track.id;
+            )}
 
-                  const progressPercent =
-                    isPreviewing && audioDuration > 0
-                      ? (audioCurrentTime / audioDuration) * 100
-                      : 0;
-
-                  return (
-                    <div
-                      key={track.id}
-                      className={`p-3 rounded-2xl border transition-all flex flex-col gap-2.5 ${
-                        isSelected
-                          ? "border-indigo-500 bg-indigo-50/40 shadow-sm"
-                          : "border-slate-200/80 bg-white/90 hover:border-slate-300"
-                      }`}
+            {/* Shots Timeline */}
+            <div className="space-y-3">
+              {slides.map((slide, index) => (
+                <div
+                  key={slide.id}
+                  className="relative rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+                >
+                  <div className="flex items-center justify-between mb-2.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      Shot {index + 1}
+                    </span>
+                    <button
+                      onClick={() => removeSlide(slide.id)}
+                      className="text-slate-400 hover:text-red-500 cursor-pointer"
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <button
-                          onClick={() => toggleAudioPreview(track)}
-                          className={`h-9 w-9 flex-shrink-0 flex items-center justify-center rounded-xl transition-transform active:scale-95 ${
-                            isPreviewing
-                              ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
-                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                          }`}
-                        >
-                          {isPreviewing ? (
-                            <Pause className="w-4 h-4 fill-white" />
-                          ) : (
-                            <Play className="w-4 h-4 fill-slate-700 ml-0.5" />
-                          )}
-                        </button>
-
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-slate-900 truncate">
-                            {track.title}
-                          </p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[10px] text-slate-400 truncate">
-                              {track.artist}
-                            </span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-slate-100 text-slate-600 font-semibold">
-                              {track.tag}
-                            </span>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={() => {
-                            setSelectedAudio(track);
-                            setPreviewAudio(track);
-                            setIsMuted(false);
-                            setHasUnsavedChanges(true);
-                            setPlayerKey((k) => k + 1);
-                          }}
-                          className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                            isSelected
-                              ? "bg-emerald-600 text-white shadow-sm"
-                              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                          }`}
-                        >
-                          {isSelected ? (
-                            <>
-                              <Check className="w-3.5 h-3.5" />
-                              Added
-                            </>
-                          ) : (
-                            "Select"
-                          )}
-                        </button>
-                      </div>
-
-                      {isPreviewing && (
-                        <div className="pt-1.5 border-t border-slate-100 animate-in fade-in duration-200">
-                          <div
-                            onClick={handleSeekAudio}
-                            className="w-full h-2 bg-slate-100 hover:bg-slate-200 rounded-full cursor-pointer relative overflow-hidden transition-colors"
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="h-24 w-16 flex-shrink-0 rounded-lg overflow-hidden border border-slate-100 bg-slate-100">
+                      <img
+                        src={slide.imageUrl}
+                        alt={`Shot ${index + 1}`}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      {motionMode === "custom" ? (
+                        <>
+                          <select
+                            value={slide.cameraMovement}
+                            onChange={(e) =>
+                              updateSlide(slide.id, {
+                                cameraMovement: e.target
+                                  .value as CameraMovement,
+                              })
+                            }
+                            className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-800 cursor-pointer"
                           >
-                            <div
-                              className="h-full bg-indigo-600 rounded-full transition-all duration-150"
-                              style={{ width: `${progressPercent}%` }}
-                            />
-                          </div>
-
-                          <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 mt-1">
-                            <span>{formatTime(audioCurrentTime)}</span>
-                            <span>{formatTime(audioDuration || 0)}</span>
-                          </div>
+                            <option value="lowAngleJibPush">
+                              Low-Angle Jib Push
+                            </option>
+                            <option value="parallaxDepthPush">
+                              Parallax Depth Push
+                            </option>
+                            <option value="spiralDive">Spiral Dive</option>
+                            <option value="handheldBreathing">
+                              Handheld Gimbal
+                            </option>
+                          </select>
+                          <select
+                            value={slide.transition}
+                            onChange={(e) =>
+                              updateSlide(slide.id, {
+                                transition: e.target.value as SlideTransition,
+                              })
+                            }
+                            className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-800 cursor-pointer"
+                          >
+                            <option value="whipZoom">Whip Zoom-In</option>
+                            <option value="skewSlide">
+                              Kinetic Skew Slide
+                            </option>
+                            <option value="exposureGlow">Exposure Flash</option>
+                          </select>
+                        </>
+                      ) : (
+                        <div className="h-full flex flex-col justify-center text-[10px] text-slate-400 bg-slate-50 rounded-lg p-2 border border-slate-100">
+                          Preset active. Switch to Custom to edit.
                         </div>
                       )}
                     </div>
-                  );
-                })}
-
-                {isLoadingMore && (
-                  <div className="flex items-center justify-center py-3 text-xs text-indigo-600 font-bold gap-1.5">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Loading more tracks...</span>
                   </div>
-                )}
-                {!hasMore && onlineTracks.length > 0 && (
-                  <div className="text-center py-2 text-[11px] text-slate-400 font-medium">
-                    End of catalog
-                  </div>
-                )}
-              </>
-            )}
+                </div>
+              ))}
+            </div>
           </div>
+        </div>
 
-          <div className="p-4 border-t border-slate-100 bg-slate-50/60">
+        {/* STICKY BOTTOM ACTIONS (Export & Update) */}
+        <div className="absolute bottom-0 left-0 w-full bg-white/95 backdrop-blur-md border-t border-slate-200 p-3 lg:p-4 shadow-[0_-4px_15px_rgba(0,0,0,0.05)] flex flex-col gap-2 z-30">
+          {hasUnsavedChanges && (
+            <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-amber-600 bg-amber-50 py-1.5 rounded-md">
+              <AlertCircle className="w-3.5 h-3.5" /> Unsaved adjustments. Tap
+              Update Preview.
+            </div>
+          )}
+          <div className="flex gap-2">
             <button
-              onClick={() => {
-                if (audioPreviewRef.current) audioPreviewRef.current.pause();
-                setPreviewingAudioId(null);
-                setPreviewAudio(selectedAudio ? { ...selectedAudio } : null);
-                setIsAudioDrawerOpen(false);
-                handleUpdatePreview();
-              }}
-              className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition-all"
+              onClick={handleUpdatePreview}
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-[11px] font-bold transition-all cursor-pointer ${
+                hasUnsavedChanges
+                  ? "bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-500/20"
+                  : "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200"
+              }`}
             >
-              Apply to Reel & Close
+              <RotateCw className="w-3.5 h-3.5" /> Update Preview
+            </button>
+            <button
+              onClick={handleExport}
+              disabled={isExporting || previewSlides.length === 0}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 text-[11px] font-bold shadow-md shadow-indigo-600/25 disabled:opacity-50 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />{" "}
+              {isExporting ? "Exporting..." : "Export MP4"}
             </button>
           </div>
-        </aside>
+        </div>
+      </aside>
+
+      {/* 3. AUDIO CATALOG BOTTOM SHEET / DESKTOP PANEL */}
+      {isAudioDrawerOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 lg:hidden"
+            onClick={() => setIsAudioDrawerOpen(false)}
+          />
+
+          <aside className="fixed bottom-0 left-0 w-full h-[85dvh] lg:h-full lg:w-[410px] lg:static bg-white lg:border-l border-slate-200 rounded-t-3xl lg:rounded-none shadow-2xl lg:shadow-none flex flex-col z-50 animate-in slide-in-from-bottom-full lg:slide-in-from-right duration-300">
+            <div className="w-full flex justify-center pt-3 pb-1 lg:hidden bg-white rounded-t-3xl shrink-0">
+              <div className="w-12 h-1 bg-slate-200 rounded-full" />
+            </div>
+
+            <div className="p-4 lg:p-5 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                  <Flame className="w-4 h-4" />
+                </span>
+                <div>
+                  <h2 className="text-[13px] lg:text-sm font-bold text-slate-900">
+                    Music Library
+                  </h2>
+                  <p className="text-[10px] lg:text-[11px] text-slate-400">
+                    Royalty-Free Audio Stream
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAudioDrawerOpen(false)}
+                className="p-1.5 bg-slate-50 text-slate-400 rounded-full cursor-pointer hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2 lg:gap-3 bg-slate-50/50 shrink-0">
+              <Volume2 className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-slate-500" />
+              <div className="flex-1">
+                <div className="flex justify-between text-[10px] font-semibold text-slate-600 mb-0.5">
+                  <span>Volume</span>
+                  <span>{Math.round(audioVolume * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={audioVolume}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setAudioVolume(val);
+                    if (audioPreviewRef.current)
+                      audioPreviewRef.current.volume = val;
+                  }}
+                  className="w-full accent-indigo-600 h-1 lg:h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 border-b border-slate-100 space-y-3 shrink-0">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search tracks, genres, vibes..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" && fetchTracks(searchQuery, true)
+                  }
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-16 py-2 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none"
+                />
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                <button
+                  onClick={() => fetchTracks(searchQuery, true)}
+                  className="absolute right-1.5 top-1.5 rounded-lg bg-indigo-600 px-2.5 py-1 text-[10px] font-bold text-white cursor-pointer"
+                >
+                  Search
+                </button>
+              </div>
+
+              <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                {[
+                  { label: "All", query: "" },
+                  { label: "Pop", query: "pop" },
+                  { label: "Rock", query: "rock" },
+                  { label: "Phonk", query: "phonk" },
+                  { label: "Lo-Fi", query: "lofi" },
+                  { label: "Cinematic", query: "cinematic" },
+                ].map((chip) => (
+                  <button
+                    key={chip.label}
+                    onClick={() => {
+                      setActiveGenre(chip.label);
+                      setSearchQuery(chip.query);
+                      fetchTracks(chip.query, true);
+                    }}
+                    className={`px-3 py-1 rounded-full font-bold whitespace-nowrap text-[10px] lg:text-[11px] cursor-pointer ${
+                      activeGenre === chip.label
+                        ? "bg-indigo-600 text-white"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50 shrink-0">
+              <input
+                type="file"
+                ref={audioFileInputRef}
+                accept="audio/*"
+                onChange={handleCustomAudioUpload}
+                className="hidden"
+              />
+              <button
+                onClick={() => audioFileInputRef.current?.click()}
+                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-slate-300 text-[11px] font-semibold text-slate-600 bg-white cursor-pointer hover:bg-slate-50"
+              >
+                <UploadCloud className="w-3.5 h-3.5" /> Upload local MP3
+              </button>
+            </div>
+
+            <div
+              ref={trackListContainerRef}
+              onScroll={handleScroll}
+              className="flex-1 overflow-y-auto p-4 space-y-2.5 pb-24 lg:pb-4 bg-slate-50/30 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+            >
+              {onlineTracks.map((track) => {
+                const isSelected = selectedAudio?.id === track.id;
+                const isPreviewing = previewingAudioId === track.id;
+                return (
+                  <div
+                    key={track.id}
+                    className={`p-2.5 rounded-xl border flex flex-col gap-2 ${isSelected ? "border-indigo-500 bg-indigo-50/40" : "border-slate-200 bg-white"}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <button
+                        onClick={() => toggleAudioPreview(track)}
+                        className={`h-8 w-8 rounded-lg cursor-pointer ${isPreviewing ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}`}
+                      >
+                        {isPreviewing ? (
+                          <Pause className="w-3.5 h-3.5 m-auto" />
+                        ) : (
+                          <Play className="w-3.5 h-3.5 m-auto ml-1" />
+                        )}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-bold text-slate-900 truncate">
+                          {track.title}
+                        </p>
+                        <p className="text-[9px] text-slate-400 truncate">
+                          {track.artist}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedAudio(track);
+                          setPreviewAudio(track);
+                          setPlayerKey((k) => k + 1);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold cursor-pointer ${isSelected ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-700"}`}
+                      >
+                        {isSelected ? "Added" : "Select"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="absolute bottom-0 left-0 w-full lg:static p-4 border-t border-slate-100 bg-white/95 backdrop-blur shadow-[0_-4px_15px_rgba(0,0,0,0.05)] shrink-0 z-10">
+              <button
+                onClick={() => {
+                  if (audioPreviewRef.current) audioPreviewRef.current.pause();
+                  setPreviewingAudioId(null);
+                  setIsAudioDrawerOpen(false);
+                  handleUpdatePreview();
+                }}
+                className="w-full py-3 rounded-xl bg-indigo-600 text-white text-[11px] font-bold shadow-md cursor-pointer hover:bg-indigo-700 transition-colors"
+              >
+                Apply & Close
+              </button>
+            </div>
+          </aside>
+        </>
       )}
     </div>
   );
