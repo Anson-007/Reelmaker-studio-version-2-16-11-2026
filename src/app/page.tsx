@@ -11,14 +11,18 @@ import {
   ChevronRight,
   Compass,
   Zap,
-  Music,
   Mail,
   Phone,
   MapPin,
   Loader2,
+  TrendingUp,
 } from "lucide-react";
-// CRITICAL FIX: Import from the new data file, not the page file
-import { ALL_TEMPLATES, TemplateItem } from "../data/templates";
+import {
+  FEATURED_TEMPLATES,
+  TRENDING_TEMPLATES,
+  TemplateItem,
+} from "../data/templates";
+import { TemplateCard } from "../components/TemplateCard";
 
 export default function HomePage() {
   const router = useRouter();
@@ -30,8 +34,9 @@ export default function HomePage() {
     router.push("/studio");
   };
 
-  // Slice the top 4 templates to feature on the homepage
-  const featuredTemplates: TemplateItem[] = ALL_TEMPLATES.slice(0, 4);
+  // Strictly separated slices for each section
+  const trendingTemplates: TemplateItem[] = TRENDING_TEMPLATES.slice(0, 4);
+  const featuredTemplates: TemplateItem[] = FEATURED_TEMPLATES.slice(0, 4);
 
   return (
     <div className="min-h-screen bg-[#FDFDFF] text-slate-800 font-sans selection:bg-purple-500/20 selection:text-purple-950">
@@ -64,6 +69,12 @@ export default function HomePage() {
           </Link>
 
           <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-600">
+            <Link
+              href="/trends"
+              className="hover:text-rose-600 transition-colors cursor-pointer"
+            >
+              Trending
+            </Link>
             <Link
               href="/templates"
               className="hover:text-purple-600 transition-colors cursor-pointer"
@@ -155,10 +166,66 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 4. TEMPLATES ROW */}
+      {/* 4. TRENDING TEMPLATES ROW (Hover Video Previews + Audio Toggle + TT Thumbnails) */}
+      <section
+        id="trending-templates"
+        className="pt-10 pb-6 px-4 sm:px-6 max-w-7xl mx-auto"
+      >
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+              Trending Templates{" "}
+              <TrendingUp className="w-5 h-5 text-rose-500" />
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Hover any card to preview the beat cut &bull; Tap to customize
+            </p>
+          </div>
+
+          <Link
+            href="/trends"
+            className="hidden sm:inline-flex items-center gap-1.5 text-xs font-bold text-rose-600 hover:text-rose-700 transition-colors cursor-pointer"
+          >
+            View all {TRENDING_TEMPLATES.length} trends{" "}
+            <ChevronRight className="w-4 h-4" />
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          {trendingTemplates.map((tpl: TemplateItem) => (
+            <TemplateCard key={tpl.id} tpl={tpl} variant="trending" />
+          ))}
+
+          {/* TRENDING EXPLORE CARD: Strictly routes to /trends */}
+          <Link
+            href="/trends"
+            className="group relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-rose-200 hover:border-rose-500 bg-rose-50/40 hover:bg-rose-50/80 transition-all duration-300 p-5 text-center shadow-sm hover:shadow-xl sm:hover:-translate-y-2 min-h-[330px] cursor-pointer"
+          >
+            <div className="h-12 w-12 rounded-2xl bg-white border border-rose-200 flex items-center justify-center text-rose-500 shadow-sm group-hover:scale-110 group-hover:bg-rose-500 group-hover:text-white transition-all duration-300 mb-3">
+              <TrendingUp className="w-6 h-6 stroke-[2.2]" />
+            </div>
+
+            <span className="text-[10px] font-bold uppercase tracking-wider text-rose-500 mb-1">
+              Trending Vault
+            </span>
+            <h3 className="text-base font-black text-slate-900 tracking-tight">
+              Explore Trends...
+            </h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-[150px]">
+              Discover viral audio trends and edit them instantly.
+            </p>
+
+            <div className="mt-4 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-rose-200 text-xs font-bold text-rose-600 shadow-sm group-hover:bg-rose-500 group-hover:text-white group-hover:border-rose-500 transition-colors">
+              Browse Trends <ArrowRight className="w-3.5 h-3.5" />
+            </div>
+          </Link>
+        </div>
+      </section>
+
+      {/* 5. FEATURED TEMPLATES ROW (Hover Video Previews + Audio Toggle + FT Thumbnails) */}
       <section
         id="templates"
-        className="pt-8 pb-10 px-4 sm:px-6 max-w-7xl mx-auto"
+        className="pt-6 pb-10 px-4 sm:px-6 max-w-7xl mx-auto"
       >
         <div className="flex items-center justify-between mb-5">
           <div>
@@ -166,7 +233,8 @@ export default function HomePage() {
               Featured Templates
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Tap any template to customize photos instantly
+              Hover to preview video transitions &bull; Tap to customize photos
+              instantly
             </p>
           </div>
 
@@ -174,72 +242,17 @@ export default function HomePage() {
             href="/templates"
             className="hidden sm:inline-flex items-center gap-1.5 text-xs font-bold text-purple-600 hover:text-purple-700 transition-colors cursor-pointer"
           >
-            View all 15 templates <ChevronRight className="w-4 h-4" />
+            View all {FEATURED_TEMPLATES.length} templates{" "}
+            <ChevronRight className="w-4 h-4" />
           </Link>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {featuredTemplates.map((tpl: TemplateItem) => (
-            <Link
-              key={tpl.id}
-              href={tpl.href}
-              className="group relative flex flex-col rounded-2xl bg-white border border-slate-200/90 shadow-sm hover:shadow-2xl hover:shadow-purple-500/15 hover:border-purple-400 transition-all duration-300 sm:hover:-translate-y-2 overflow-hidden cursor-pointer"
-            >
-              <div className="relative aspect-[9/13.5] w-full overflow-hidden bg-slate-900">
-                <img
-                  src={tpl.thumbnail}
-                  alt={tpl.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
-                />
-
-                <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur text-[10px] font-bold text-white shadow-sm">
-                  9:16
-                </div>
-
-                <div className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/95 backdrop-blur border border-white/50 text-[10px] font-bold text-slate-800 shadow-sm group-hover:bg-purple-600 group-hover:text-white transition-colors duration-200">
-                  <Music className="w-3 h-3 text-purple-600 group-hover:text-white" />
-                  {tpl.bpm}
-                </div>
-
-                <div className="absolute inset-x-0 bottom-0 p-4 sm:p-3 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex flex-col justify-end">
-                  <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider">
-                    {tpl.tag}
-                  </span>
-                  <h3 className="text-sm font-bold text-white leading-tight">
-                    {tpl.title}
-                  </h3>
-                </div>
-              </div>
-
-              <div className="p-4 sm:p-3 flex flex-col gap-2.5 bg-white flex-1 justify-between">
-                <div className="flex items-center gap-3 sm:gap-2">
-                  <div className="h-8 w-8 sm:h-7 sm:w-7 rounded-lg overflow-hidden border border-slate-200 flex-shrink-0 bg-slate-100">
-                    <img
-                      src={tpl.previewSnippet}
-                      alt="Sample"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs sm:text-[11px] font-bold text-slate-800 truncate">
-                      + Add Your Photos
-                    </p>
-                    <p className="text-[10px] text-slate-400 truncate">
-                      {tpl.subtitle}
-                    </p>
-                  </div>
-                </div>
-
-                <div
-                  className={`w-full py-2.5 sm:py-2 rounded-xl bg-gradient-to-r ${tpl.badgeColor} text-white text-xs font-bold shadow-md transition-all text-center`}
-                >
-                  Use Template
-                </div>
-              </div>
-            </Link>
+            <TemplateCard key={tpl.id} tpl={tpl} variant="featured" />
           ))}
 
-          {/* 5th CARD: REDIRECTS TO /TEMPLATES */}
+          {/* FEATURED 5th CARD: Strictly routes to /templates */}
           <Link
             href="/templates"
             className="group relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-purple-200 hover:border-purple-500 bg-purple-50/40 hover:bg-purple-50/80 transition-all duration-300 p-5 text-center shadow-sm hover:shadow-xl sm:hover:-translate-y-2 min-h-[330px] cursor-pointer"
@@ -270,7 +283,7 @@ export default function HomePage() {
         <hr className="border-t border-slate-200/80" />
       </div>
 
-      {/* 5. VISUAL PIPELINE */}
+      {/* 6. VISUAL PIPELINE */}
       <section
         id="how-it-works"
         className="py-8 px-4 sm:px-6 max-w-6xl mx-auto"
@@ -473,7 +486,7 @@ export default function HomePage() {
         <hr className="border-t border-slate-200/80" />
       </div>
 
-      {/* 6. REELSTUDIO PRO WORKSPACE CALLOUT */}
+      {/* 7. REELSTUDIO PRO WORKSPACE CALLOUT */}
       <section className="py-8 px-4 sm:px-6 max-w-7xl mx-auto">
         <div className="rounded-3xl bg-slate-950 text-white p-6 sm:p-7 md:p-12 relative overflow-hidden shadow-2xl">
           <div className="absolute -top-24 -right-24 w-96 h-96 bg-purple-600/30 rounded-full blur-[120px] pointer-events-none" />
@@ -490,9 +503,10 @@ export default function HomePage() {
             </h2>
 
             <p className="mt-3 text-slate-400 text-xs md:text-sm leading-relaxed max-w-lg mx-auto sm:mx-0">
-              Open the full **ReelStudio Editor** to build 9:16 reels with 10
-              custom 3D camera drift moves, 12 spatial transitions, Instagram
-              safe-zone overlays, and free music catalog streaming.
+              Open the full <strong>ReelStudio Editor</strong> to build 9:16
+              reels with 10 custom 3D camera drift moves, 12 spatial
+              transitions, Instagram safe-zone overlays, and free music catalog
+              streaming.
             </p>
 
             <div className="mt-6 flex flex-col sm:flex-row flex-wrap gap-4 items-center relative z-20">
@@ -515,14 +529,14 @@ export default function HomePage() {
               </button>
 
               <span className="text-[10px] sm:text-[11px] text-slate-400">
-                100% Free • No watermarks • In-Browser GPU Export
+                100% Free &bull; No watermarks &bull; In-Browser GPU Export
               </span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 7. CLEAN FOOTER */}
+      {/* 8. CLEAN FOOTER */}
       <footer className="border-t border-slate-200 bg-white mt-10">
         <div className="max-w-7xl mx-auto px-6 py-10 sm:py-12">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">

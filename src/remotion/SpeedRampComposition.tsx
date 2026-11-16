@@ -6,98 +6,62 @@ import {
   staticFile,
   useCurrentFrame,
   useVideoConfig,
-  Img,
+  Sequence,
 } from "remotion";
 import { Audio } from "@remotion/media";
+import { OutroCard, OutroProps } from "./OutroCard";
+
+export type OutroTransitionType = "cut" | "fade" | "slice" | "circle" | "slide";
 
 interface SpeedRampProps {
   photos: string[];
+  showOutro?: boolean;
+  outroData?: OutroProps & { transitionType?: OutroTransitionType };
 }
 
 // Exact 30 FPS frame numbers converted from your 58 timestamps
 export const SPEED_RAMP_BEAT_FRAMES: number[] = [
-  0, // 00:00:00:00
-  50, // 00:00:01:20
-  70, // 00:00:02:10
-  84, // 00:00:02:24
-  103, // 00:00:03:13
-  123, // 00:00:04:03
-  130, // 00:00:04:10
-  137, // 00:00:04:17
-  144, // 00:00:04:24
-  156, // 00:00:05:06
-  163, // 00:00:05:13
-  170, // 00:00:05:20
-  183, // 00:00:06:03
-  190, // 00:00:06:10
-  193, // 00:00:06:13
-  197, // 00:00:06:17
-  200, // 00:00:06:20
-  204, // 00:00:06:24
-  213, // 00:00:07:03
-  216, // 00:00:07:06
-  220, // 00:00:07:10
-  223, // 00:00:07:13
-  227, // 00:00:07:17
-  231, // 00:00:07:21
-  234, // 00:00:07:24
-  243, // 00:00:08:03
-  246, // 00:00:08:06
-  250, // 00:00:08:10
-  253, // 00:00:08:13
-  255, // 00:00:08:15
-  257, // 00:00:08:17
-  259, // 00:00:08:19
-  261, // 00:00:08:21
-  263, // 00:00:08:23
-  270, // 00:00:09:00
-  272, // 00:00:09:02
-  274, // 00:00:09:04
-  276, // 00:00:09:06
-  278, // 00:00:09:08
-  280, // 00:00:09:10
-  282, // 00:00:09:12
-  284, // 00:00:09:14
-  286, // 00:00:09:16
-  288, // 00:00:09:18
-  290, // 00:00:09:20
-  292, // 00:00:09:22
-  294, // 00:00:09:24
-  301, // 00:00:10:01
-  303, // 00:00:10:03
-  305, // 00:00:10:05
-  307, // 00:00:10:07
-  309, // 00:00:10:09
-  311, // 00:00:10:11
-  313, // 00:00:10:13
-  315, // 00:00:10:15
-  317, // 00:00:10:17
-  319, // 00:00:10:19
-  321, // 00:00:10:21 (Held until frame 330)
+  0, 50, 70, 84, 103, 123, 130, 137, 144, 156, 163, 170, 183, 190, 193, 197,
+  200, 204, 213, 216, 220, 223, 227, 231, 234, 243, 246, 250, 253, 255, 257,
+  259, 261, 263, 270, 272, 274, 276, 278, 280, 282, 284, 286, 288, 290, 292,
+  294, 301, 303, 305, 307, 309, 311, 313, 315, 317, 319, 321,
 ];
 
-export const TOTAL_FRAMES = 330; // Exactly 11.0s @ 30 FPS
+export const BASE_DURATION = 330; // Exactly 11.0s @ 30 FPS
+export const OUTRO_DURATION = 150; // 5.0s
+const TRANSITION_FRAMES = 25;
 
-export const SpeedRampComposition: React.FC<SpeedRampProps> = ({ photos }) => {
+export const getSpeedRampTotalFrames = (
+  showOutro: boolean = false,
+  transition: string = "cut",
+) => {
+  const overlap = showOutro && transition !== "cut" ? TRANSITION_FRAMES : 0;
+  return showOutro ? BASE_DURATION + OUTRO_DURATION - overlap : BASE_DURATION;
+};
+
+export const SpeedRampComposition: React.FC<SpeedRampProps> = ({
+  photos,
+  showOutro = false,
+  outroData,
+}) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  const safePhotos =
-    photos && photos.length > 0
-      ? photos
-      : [
-          "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=1200",
-          "https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=1200",
-          "https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=1200",
-          "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=1200",
-        ];
+  const transitionType = outroData?.transitionType || "cut";
+  const overlapDur =
+    showOutro && transitionType !== "cut" ? TRANSITION_FRAMES : 0;
+  const outroStartFrame = BASE_DURATION - overlapDur;
+
+  const safePhotos = photos && photos.length > 0 ? photos : [];
 
   // Find active cut index
   let cutIndex = 0;
-  for (let i = SPEED_RAMP_BEAT_FRAMES.length - 1; i >= 0; i--) {
-    if (frame >= SPEED_RAMP_BEAT_FRAMES[i]) {
-      cutIndex = i;
-      break;
+  if (frame < BASE_DURATION) {
+    for (let i = SPEED_RAMP_BEAT_FRAMES.length - 1; i >= 0; i--) {
+      if (frame >= SPEED_RAMP_BEAT_FRAMES[i]) {
+        cutIndex = i;
+        break;
+      }
     }
   }
 
@@ -105,13 +69,16 @@ export const SpeedRampComposition: React.FC<SpeedRampProps> = ({ photos }) => {
   const nextFrame =
     cutIndex < SPEED_RAMP_BEAT_FRAMES.length - 1
       ? SPEED_RAMP_BEAT_FRAMES[cutIndex + 1]
-      : TOTAL_FRAMES;
+      : BASE_DURATION;
   const slotDuration = Math.max(1, nextFrame - startFrame);
   const localFrame = frame - startFrame;
 
-  const activePhoto = safePhotos[cutIndex % safePhotos.length];
+  const activePhoto =
+    safePhotos.length > 0 ? safePhotos[cutIndex % safePhotos.length] : null;
   const prevPhoto =
-    safePhotos[(cutIndex - 1 + safePhotos.length) % safePhotos.length];
+    safePhotos.length > 0
+      ? safePhotos[(cutIndex - 1 + safePhotos.length) % safePhotos.length]
+      : null;
 
   let scale = 1.0;
   let opacity = 1.0;
@@ -121,112 +88,223 @@ export const SpeedRampComposition: React.FC<SpeedRampProps> = ({ photos }) => {
   let underlayOpacity = 0.0;
   let rotation = 0;
 
-  if (slotDuration <= 3) {
-    // SECTION 3: 2-frame micro-stutters (Frame 253 onward)
-    // Razor snap cuts + instant punch to prevent ghosting or blur
-    scale = localFrame === 0 ? 1.04 : 1.0;
-    flashOpacity = localFrame === 0 ? 0.22 : 0.0;
-  } else if (slotDuration >= 14) {
-    // SECTION 1: Deep Sustained Intro Drops (Frames 0 to 123)
-    // Settle spring + slow drift zoom
-    const introSpring = spring({
-      frame: localFrame,
-      fps,
-      config: { damping: 14, stiffness: 120, mass: 0.8 },
-    });
-    const punch = interpolate(introSpring, [0, 1], [1.14, 1.0]);
-    const drift = interpolate(localFrame, [0, slotDuration], [1.0, 1.03], {
-      extrapolateRight: "clamp",
-    });
-    scale = punch * drift;
+  if (frame < BASE_DURATION) {
+    if (slotDuration <= 3) {
+      // SECTION 3: 2-frame micro-stutters (Frame 253 onward)
+      // Razor snap cuts + instant punch to prevent ghosting or blur
+      scale = localFrame === 0 ? 1.04 : 1.0;
+      flashOpacity = localFrame === 0 ? 0.22 : 0.0;
+    } else if (slotDuration >= 14) {
+      // SECTION 1: Deep Sustained Intro Drops (Frames 0 to 123)
+      // Settle spring + slow drift zoom
+      const introSpring = spring({
+        frame: localFrame,
+        fps,
+        config: { damping: 14, stiffness: 120, mass: 0.8 },
+      });
+      const punch = interpolate(introSpring, [0, 1], [1.14, 1.0]);
+      const drift = interpolate(localFrame, [0, slotDuration], [1.0, 1.03], {
+        extrapolateRight: "clamp",
+      });
+      scale = punch * drift;
 
-    showUnderlay = localFrame < 5;
-    if (showUnderlay) {
-      underlayScale = interpolate(localFrame, [0, 5], [1.0, 1.08]);
-      underlayOpacity = interpolate(localFrame, [0, 5], [0.6, 0]);
-      opacity = interpolate(localFrame, [0, 4], [0.4, 1], {
+      showUnderlay = localFrame < 5;
+      if (showUnderlay) {
+        underlayScale = interpolate(localFrame, [0, 5], [1.0, 1.08]);
+        underlayOpacity = interpolate(localFrame, [0, 5], [0.6, 0]);
+        opacity = interpolate(localFrame, [0, 4], [0.4, 1], {
+          extrapolateRight: "clamp",
+        });
+      }
+
+      flashOpacity = interpolate(localFrame, [0, 3], [0.35, 0], {
+        extrapolateRight: "clamp",
+      });
+    } else {
+      // SECTION 2: Rhythmic Accelerating Mid-Roll (Frames 130 to 253)
+      const midSpring = spring({
+        frame: localFrame,
+        fps,
+        config: { damping: 13, stiffness: 170, mass: 0.5 },
+      });
+      scale = interpolate(midSpring, [0, 1], [1.08, 1.0]);
+
+      // Subtle alternating tilt on fast snare cuts
+      if (cutIndex % 2 === 0) {
+        rotation = interpolate(midSpring, [0, 1], [1.2, 0]);
+      } else {
+        rotation = interpolate(midSpring, [0, 1], [-1.2, 0]);
+      }
+
+      showUnderlay = localFrame < 3 && slotDuration >= 6;
+      if (showUnderlay) {
+        underlayOpacity = interpolate(localFrame, [0, 3], [0.35, 0]);
+      }
+
+      flashOpacity = interpolate(localFrame, [0, 2], [0.18, 0], {
         extrapolateRight: "clamp",
       });
     }
+  }
 
-    flashOpacity = interpolate(localFrame, [0, 3], [0.35, 0], {
-      extrapolateRight: "clamp",
-    });
-  } else {
-    // SECTION 2: Rhythmic Accelerating Mid-Roll (Frames 130 to 253)
-    const midSpring = spring({
-      frame: localFrame,
-      fps,
-      config: { damping: 13, stiffness: 170, mass: 0.5 },
-    });
-    scale = interpolate(midSpring, [0, 1], [1.08, 1.0]);
+  const outroLocalFrame = frame - outroStartFrame;
+  let outroTransitionStyle: React.CSSProperties = {
+    width: "100%",
+    height: "100%",
+    position: "absolute",
+  };
 
-    // Subtle alternating tilt on fast snare cuts
-    if (cutIndex % 2 === 0) {
-      rotation = interpolate(midSpring, [0, 1], [1.2, 0]);
-    } else {
-      rotation = interpolate(midSpring, [0, 1], [-1.2, 0]);
+  if (showOutro && outroLocalFrame >= 0 && outroLocalFrame <= overlapDur) {
+    if (transitionType === "fade") {
+      outroTransitionStyle.opacity = interpolate(
+        outroLocalFrame,
+        [0, overlapDur],
+        [0, 1],
+        { extrapolateRight: "clamp" },
+      );
+    } else if (transitionType === "slice") {
+      const progress = interpolate(outroLocalFrame, [0, overlapDur], [0, 150], {
+        extrapolateRight: "clamp",
+      });
+      // FIX: Corrected line break in the clipPath template literal
+      outroTransitionStyle.clipPath = `polygon(0 0, ${progress}% 0, ${progress - 50}% 100%, 0 100%)`;
+    } else if (transitionType === "circle") {
+      const radius = interpolate(outroLocalFrame, [0, overlapDur], [0, 150], {
+        extrapolateRight: "clamp",
+      });
+      outroTransitionStyle.clipPath = `circle(${radius}% at 50% 50%)`;
+    } else if (transitionType === "slide") {
+      const y = interpolate(outroLocalFrame, [0, overlapDur], [100, 0], {
+        extrapolateRight: "clamp",
+      });
+      outroTransitionStyle.transform = `translateY(${y}%)`;
     }
-
-    showUnderlay = localFrame < 3 && slotDuration >= 6;
-    if (showUnderlay) {
-      underlayOpacity = interpolate(localFrame, [0, 3], [0.35, 0]);
-    }
-
-    flashOpacity = interpolate(localFrame, [0, 2], [0.18, 0], {
-      extrapolateRight: "clamp",
-    });
   }
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000", overflow: "hidden" }}>
-      <Audio src={staticFile("audio/ReelAudio-3.mp3")} />
+      <Sequence from={0} durationInFrames={BASE_DURATION}>
+        {/* FIX: Audio volume is clamped and processed via callback */}
+        <Audio
+          src={staticFile("audio/ReelAudio-3.mp3")}
+          volume={(f) =>
+            showOutro
+              ? interpolate(
+                  f,
+                  [outroStartFrame, outroStartFrame + TRANSITION_FRAMES],
+                  [1, 0],
+                  {
+                    extrapolateLeft: "clamp",
+                    extrapolateRight: "clamp",
+                  },
+                )
+              : 1
+          }
+        />
 
-      {/* GHOSTED UNDERLAY MORPH */}
-      {showUnderlay && (
+        {/* GHOSTED UNDERLAY MORPH */}
+        {showUnderlay && prevPhoto && (
+          <AbsoluteFill
+            style={{
+              transform: `scale(${underlayScale})`,
+              opacity: underlayOpacity,
+              filter: "blur(8px)",
+            }}
+          >
+            <img
+              src={prevPhoto}
+              alt="Outgoing Slide"
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                position: "absolute",
+                inset: 0,
+              }}
+            />
+          </AbsoluteFill>
+        )}
+
+        {/* FOREGROUND SHOT */}
         <AbsoluteFill
           style={{
-            transform: `scale(${underlayScale})`,
-            opacity: underlayOpacity,
-            filter: "blur(8px)",
+            transform: `scale(${scale}) rotate(${rotation}deg)`,
+            opacity,
+            justifyContent: "center",
+            alignItems: "center",
           }}
         >
-          <Img
-            crossOrigin="anonymous"
-            src={prevPhoto}
-            alt="Outgoing Slide"
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
+          {activePhoto ? (
+            <img
+              src={activePhoto}
+              alt={`Slide ${cutIndex + 1}`}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                position: "absolute",
+                inset: 0,
+              }}
+            />
+          ) : (
+            <AbsoluteFill
+              style={{
+                backgroundColor: "#1e1e1e",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <span
+                style={{
+                  color: "#f43f5e",
+                  fontSize: "40px",
+                  fontWeight: "bold",
+                }}
+              >
+                Upload Photos
+              </span>
+            </AbsoluteFill>
+          )}
         </AbsoluteFill>
-      )}
 
-      {/* FOREGROUND SHOT */}
-      <AbsoluteFill
-        style={{
-          transform: `scale(${scale}) rotate(${rotation}deg)`,
-          opacity,
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <Img
-          crossOrigin="anonymous"
-          src={activePhoto}
-          alt={`Slide ${cutIndex + 1}`}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-        />
-      </AbsoluteFill>
+        {/* TRANSIENT EXPOSURE FLASH */}
+        {flashOpacity > 0 && (
+          <AbsoluteFill
+            style={{
+              backgroundColor: "#FFFFFF",
+              opacity: flashOpacity,
+              mixBlendMode: "screen",
+              pointerEvents: "none",
+            }}
+          />
+        )}
+      </Sequence>
 
-      {/* TRANSIENT EXPOSURE FLASH */}
-      {flashOpacity > 0 && (
-        <AbsoluteFill
-          style={{
-            backgroundColor: "#FFFFFF",
-            opacity: flashOpacity,
-            mixBlendMode: "screen",
-            pointerEvents: "none",
-          }}
-        />
+      {/* Outro Sequence */}
+      {showOutro && (
+        <>
+          {/* FIX: Transition Sound Effect */}
+          <Sequence from={outroStartFrame} durationInFrames={OUTRO_DURATION}>
+            <Audio
+              src={staticFile("audio/whoosh-transition.mp3")}
+              volume={0.8}
+            />
+          </Sequence>
+
+          <Sequence from={outroStartFrame} durationInFrames={OUTRO_DURATION}>
+            <div style={outroTransitionStyle}>
+              <OutroCard
+                {...(outroData || {
+                  logoUrl: null,
+                  bgUrl: null,
+                  contactText: "",
+                  socialHandle: "",
+                })}
+              />
+            </div>
+          </Sequence>
+        </>
       )}
     </AbsoluteFill>
   );

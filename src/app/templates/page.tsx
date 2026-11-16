@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
-  Music,
   Play,
   Search,
   Sparkles,
@@ -12,7 +11,8 @@ import {
   ArrowRight,
   Clock,
 } from "lucide-react";
-import { ALL_TEMPLATES } from "../../data/templates"; // Cleanly imported data
+import { FEATURED_TEMPLATES } from "../../data/templates";
+import { TemplateCard } from "../../components/TemplateCard";
 
 const CATEGORIES = ["All", "Trends", "Velocity", "Beat Sync", "Cinematic"];
 
@@ -20,7 +20,7 @@ export default function TemplatesGalleryPage() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredTemplates = ALL_TEMPLATES.filter((tpl) => {
+  const filteredTemplates = FEATURED_TEMPLATES.filter((tpl) => {
     const matchesCategory =
       selectedCategory === "All" || tpl.category === selectedCategory;
     const matchesQuery =
@@ -78,7 +78,7 @@ export default function TemplatesGalleryPage() {
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-200 text-purple-700 text-xs font-bold mb-3 shadow-sm">
               <Sparkles className="w-3.5 h-3.5 text-purple-600" />
               <span>
-                Beat-Matched Presets ({ALL_TEMPLATES.length} Available)
+                Beat-Matched Presets ({FEATURED_TEMPLATES.length} Available)
               </span>
             </div>
             <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-950 drop-shadow-sm">
@@ -96,7 +96,11 @@ export default function TemplatesGalleryPage() {
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap cursor-pointer shadow-sm ${selectedCategory === cat ? "bg-slate-900 text-white" : "bg-white/80 backdrop-blur-md text-slate-600 border border-slate-200 hover:bg-white"}`}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap cursor-pointer shadow-sm ${
+                    selectedCategory === cat
+                      ? "bg-slate-900 text-white"
+                      : "bg-white/80 backdrop-blur-md text-slate-600 border border-slate-200 hover:bg-white"
+                  }`}
                 >
                   {cat}
                 </button>
@@ -136,75 +140,21 @@ export default function TemplatesGalleryPage() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-5 gap-4">
               {filteredTemplates.map((tpl) => (
-                <Link
-                  key={tpl.id}
-                  href={tpl.href}
-                  className="group relative flex flex-col rounded-2xl bg-white/80 backdrop-blur-md border border-slate-200 shadow-sm hover:shadow-xl hover:border-purple-300 transition-all duration-300 overflow-hidden cursor-pointer"
-                >
-                  <div className="relative aspect-[9/13.5] w-full overflow-hidden bg-slate-900">
-                    <img
-                      src={tpl.thumbnail}
-                      alt={tpl.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
-                    />
-                    <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur text-[10px] font-bold text-white shadow-sm">
-                      {tpl.duration}
-                    </div>
-                    <div className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/95 backdrop-blur border border-white/50 text-[10px] font-bold text-slate-800 shadow-sm group-hover:bg-purple-600 group-hover:text-white transition-colors duration-200">
-                      <Music className="w-3 h-3 text-purple-600 group-hover:text-white" />
-                      {tpl.bpm}
-                    </div>
-                    <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex flex-col justify-end">
-                      <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider">
-                        {tpl.cutsCount} Cuts
-                      </span>
-                      <h3 className="text-sm font-bold text-white leading-tight mt-0.5">
-                        {tpl.title}
-                      </h3>
-                    </div>
-                  </div>
-                  <div className="p-3 flex flex-col gap-2.5 flex-1 justify-between bg-white">
-                    <div className="flex items-center gap-2">
-                      <div className="h-7 w-7 rounded-lg overflow-hidden border border-slate-200 flex-shrink-0 bg-slate-100">
-                        <img
-                          src={tpl.previewSnippet}
-                          alt="Snippet"
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-bold text-slate-800 truncate">
-                          {tpl.subtitle}
-                        </p>
-                        <p className="text-[10px] text-slate-400 font-mono truncate">
-                          {tpl.audioName}
-                        </p>
-                      </div>
-                    </div>
-                    <div
-                      className={`w-full py-2 rounded-xl bg-gradient-to-r ${tpl.badgeColor} text-white text-xs font-bold shadow-sm text-center`}
-                    >
-                      Use Template
-                    </div>
-                  </div>
-                </Link>
+                <TemplateCard key={tpl.id} tpl={tpl} variant="featured" />
               ))}
 
               {/* COMING SOON CARD */}
-              <div className="group relative flex flex-col rounded-2xl bg-slate-50/50 backdrop-blur-sm border-2 border-dashed border-slate-300 shadow-sm overflow-hidden items-center justify-center min-h-[300px] aspect-[9/13.5] cursor-default transition-all hover:bg-slate-50/80 hover:border-purple-300">
-                <div className="flex flex-col items-center gap-3 p-6 text-center opacity-70 group-hover:opacity-100 transition-opacity">
-                  <div className="h-12 w-12 rounded-full bg-slate-200 flex items-center justify-center shadow-inner">
-                    <Clock className="w-5 h-5 text-slate-500" />
+              <div className="group relative flex flex-col rounded-2xl bg-slate-50/50 backdrop-blur-sm border-2 border-dashed border-slate-300 shadow-sm overflow-hidden items-center justify-center min-h-[250px] aspect-[9/13.5] cursor-default transition-all hover:bg-slate-50/80 hover:border-purple-300">
+                <div className="flex flex-col items-center gap-3 p-4 text-center opacity-70 group-hover:opacity-100 transition-opacity">
+                  <div className="h-10 w-10 rounded-full bg-slate-200 flex items-center justify-center shadow-inner">
+                    <Clock className="w-4 h-4 text-slate-500" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black text-slate-700 tracking-tight">
+                    <h3 className="text-xs font-black text-slate-700 tracking-tight">
                       More Coming Soon
                     </h3>
-                    <p className="text-[11px] text-slate-500 mt-2 font-medium leading-relaxed">
-                      We are working on new beat-synced trends. Stay tuned!
-                    </p>
                   </div>
                 </div>
               </div>

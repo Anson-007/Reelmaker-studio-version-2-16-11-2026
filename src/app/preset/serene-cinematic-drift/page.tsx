@@ -1,11 +1,23 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Player, PlayerRef } from "@remotion/player";
 import {
   SereneCinematicComposition,
-  TOTAL_FRAMES,
+  getSereneCinematicTotalFrames,
+  OutroTransitionType,
 } from "../../../remotion/SereneCinematicComposition";
+import {
+  OutroProps,
+  OutroStyle,
+  PRESET_GRADIENTS,
+} from "../../../remotion/OutroCard";
+import {
+  AddOutroGridCard,
+  SlotCounterPill,
+} from "../../../components/EditorMediaAddons";
+import { getTemplateConfig } from "../../../data/templates";
+
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -24,13 +36,81 @@ import {
   Video as VideoIcon,
   Check,
   AlertCircle,
+  ImageIcon,
+  CheckCircle2,
+  Sparkles,
 } from "lucide-react";
 
-const DEFAULT_VIDEOS: string[] = [];
+// --- DEFAULT LOCAL VIDEO ASSETS ---
+const DEFAULT_VIDEOS = [
+  "/v1.mp4",
+  "/v2.mp4",
+  "/v3.mp4",
+  "/v4.mp4",
+  "/v5.mp4",
+  "/v6.mp4",
+  "/v7.mp4",
+  "/v8.mp4",
+];
+
+async function ensureDataUrl(url: string): Promise<string> {
+  if (url.startsWith("data:") || url.startsWith("blob:") || url.startsWith("/"))
+    return url;
+  try {
+    const res = await fetch(url, { mode: "cors" });
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return url;
+  }
+}
+
+type UIOutroData = Omit<OutroProps, "styleType"> & {
+  styleType: OutroStyle | "none";
+  customBgColor: string;
+  gradientIndex: number;
+  transitionType: OutroTransitionType;
+  logoAnim: "spring" | "fade" | "drop" | "spin";
+  textAnim: "slideUp" | "fade" | "scale";
+  animSpeed: number;
+  contactTextSize: number;
+  socialTextSize: number;
+};
 
 export default function SereneCinematicPresetPage() {
+  const [activeTab, setActiveTab] = useState<"media" | "branding">("media");
   const [uploadedVideos, setUploadedVideos] =
     useState<string[]>(DEFAULT_VIDEOS);
+
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const [outroData, setOutroData] = useState<UIOutroData>({
+    styleType: "none",
+    logoUrl: null,
+    bgUrl: null,
+    contactText: "123 Business Road, Suite 100\nHyderabad, TG 500034",
+    socialHandle: "@yourbrand",
+    customBgColor: "#4f46e5",
+    gradientIndex: 0,
+    transitionType: "circle",
+    logoAnim: "spring",
+    textAnim: "slideUp",
+    animSpeed: 25,
+    contactTextSize: 30,
+    socialTextSize: 35,
+  });
+
+  const isOutroEnabled = outroData.styleType !== "none";
+  const needsBgImage = ["classic", "glass", "split"].includes(
+    outroData.styleType,
+  );
+  const needsColorPicker = outroData.styleType === "custom-color";
+  const needsGradientPicker = outroData.styleType === "gradient-preset";
+
   const [resolution, setResolution] = useState<"1080p" | "2k" | "4k">("1080p");
   const [isExporting, setIsExporting] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
@@ -42,12 +122,53 @@ export default function SereneCinematicPresetPage() {
   }>({ show: false, message: "" });
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentFrame, setCurrentFrame] = useState(0);
-  const [playerKey, setPlayerKey] = useState(0);
   const [showInstagramOverlay, setShowInstagramOverlay] = useState(false);
 
   const playerRef = useRef<PlayerRef>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const bgInputRef = useRef<HTMLInputElement>(null);
   const fps = 30;
+
+  const BASE_DURATION = getSereneCinematicTotalFrames(false, "cut");
+  const activeTotalFrames = getSereneCinematicTotalFrames(
+    isOutroEnabled,
+    outroData.transitionType,
+  );
+
+  const ensureOutroVisible = useCallback(
+    (startFrameOffset: number = 75) => {
+      setIsUpdating(true);
+      setTimeout(() => {
+        if (playerRef.current) {
+          playerRef.current.pause();
+          playerRef.current.seekTo(BASE_DURATION + startFrameOffset);
+        }
+        setIsUpdating(false);
+      }, 150);
+    },
+    [BASE_DURATION],
+  );
+
+  const forcePreviewTransition = useCallback(() => {
+    setIsUpdating(true);
+    setTimeout(() => {
+      if (playerRef.current) {
+        playerRef.current.seekTo(BASE_DURATION - 30);
+        playerRef.current.play();
+      }
+      setIsUpdating(false);
+    }, 150);
+  }, [BASE_DURATION]);
+
+  const handleOpenOutroFromGrid = useCallback(() => {
+    setActiveTab("branding");
+    if (outroData.styleType === "none") {
+      setOutroData((prev) => ({ ...prev, styleType: "classic" }));
+    }
+    ensureOutroVisible(40);
+  }, [outroData.styleType, ensureOutroVisible]);
+
 
   useEffect(() => {
     let animationFrameId: number;
@@ -64,7 +185,10 @@ export default function SereneCinematicPresetPage() {
 
   useEffect(() => {
     return () => {
-      uploadedVideos.forEach((url) => URL.revokeObjectURL(url));
+      // Only revoke blobs, not our default local assets
+      uploadedVideos.forEach((url) => {
+        if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+      });
     };
   }, [uploadedVideos]);
 
@@ -80,7 +204,7 @@ export default function SereneCinematicPresetPage() {
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const percentage = Math.max(0, Math.min(1, clickX / rect.width));
-    const newFrame = Math.round(percentage * TOTAL_FRAMES);
+    const newFrame = Math.round(percentage * activeTotalFrames);
     playerRef.current.seekTo(newFrame);
     setCurrentFrame(newFrame);
   };
@@ -92,12 +216,25 @@ export default function SereneCinematicPresetPage() {
     return `${m}:${s < 10 ? "0" : ""}${s}`;
   };
 
+  const handleOutroImageUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    type: "logo" | "bg",
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    setOutroData((prev) => ({
+      ...prev,
+      [type === "logo" ? "logoUrl" : "bgUrl"]: url,
+    }));
+    ensureOutroVisible(30);
+  };
+
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     const fileList = Array.from(files);
 
-    let hasError = false;
     const validUrls: string[] = [];
 
     for (const file of fileList) {
@@ -127,15 +264,17 @@ export default function SereneCinematicPresetPage() {
         });
         validUrls.push(url);
       } catch (error: any) {
-        hasError = true;
         setUploadError({ show: true, message: error });
         break;
       }
     }
 
     if (validUrls.length > 0) {
-      setUploadedVideos((prev) => [...prev, ...validUrls].slice(0, 8)); // Cap at 8 videos
-      setPlayerKey((k) => k + 1);
+      setUploadedVideos((prev) => {
+        const combined =
+          prev === DEFAULT_VIDEOS ? validUrls : [...prev, ...validUrls];
+        return combined.slice(0, 8); // Cap at 8 videos
+      });
     }
 
     if (videoInputRef.current) videoInputRef.current.value = "";
@@ -143,9 +282,9 @@ export default function SereneCinematicPresetPage() {
 
   const removeVideo = (index: number) => {
     const urlToRemove = uploadedVideos[index];
-    if (urlToRemove) URL.revokeObjectURL(urlToRemove);
+    if (urlToRemove && urlToRemove.startsWith("blob:"))
+      URL.revokeObjectURL(urlToRemove);
     setUploadedVideos(uploadedVideos.filter((_, i) => i !== index));
-    setPlayerKey((k) => k + 1);
   };
 
   const handleExport = async () => {
@@ -159,19 +298,38 @@ export default function SereneCinematicPresetPage() {
     }[resolution];
 
     try {
+      const safeVideos = await Promise.all(
+        uploadedVideos.map((url) => ensureDataUrl(url)),
+      );
       setStatusMessage("Initializing browser GPU encoder...");
       const { renderMediaOnWeb } = await import("@remotion/web-renderer");
 
       const { getBlob } = await renderMediaOnWeb({
+        licenseKey: "free-license",
+        delayRenderTimeoutInMilliseconds: 60000,
         composition: {
           id: "SereneCinematicComposition",
           component: SereneCinematicComposition as React.ComponentType<any>,
-          durationInFrames: TOTAL_FRAMES,
+          durationInFrames: activeTotalFrames,
           fps,
           width: dimensions.width,
           height: dimensions.height,
         },
-        inputProps: { videos: uploadedVideos },
+        inputProps: {
+          videos: safeVideos,
+          showOutro: isOutroEnabled,
+          outroData: {
+            ...outroData,
+            logoUrl: outroData.logoUrl
+              ? await ensureDataUrl(outroData.logoUrl)
+              : null,
+            bgUrl: outroData.bgUrl
+              ? await ensureDataUrl(outroData.bgUrl)
+              : null,
+            styleType:
+              outroData.styleType === "none" ? "classic" : outroData.styleType,
+          },
+        },
         onProgress: ({ progress }) => {
           const percent = Math.round(progress * 100);
           setRenderProgress(percent);
@@ -200,6 +358,22 @@ export default function SereneCinematicPresetPage() {
     }
   };
 
+  const OUTRO_STYLES: { id: OutroStyle | "none"; label: string }[] = [
+    { id: "none", label: "🚫 None" },
+    { id: "classic", label: "Classic Dark" },
+    { id: "elegant-dark", label: "Elegant Gold" },
+    { id: "aesthetic-pastel", label: "Warm Pastel" },
+    { id: "modern-corporate", label: "Corporate Grid" },
+    { id: "vibrant-gradient", label: "Neon Glow" },
+    { id: "glass", label: "Frosted Glass" },
+    { id: "minimalist-light", label: "Editorial Light" },
+    { id: "split", label: "Split Screen" },
+    { id: "bold", label: "Bold Solid" },
+    { id: "minimal", label: "Basic Clean" },
+    { id: "custom-color", label: "🎨 Custom Color" },
+    { id: "gradient-preset", label: "🌈 Gradients" },
+  ];
+
   return (
     <div className="relative flex flex-col lg:flex-row h-[100dvh] w-full overflow-hidden bg-gradient-to-b from-indigo-950 via-slate-900 to-black lg:bg-none lg:bg-[#FDFDFF] font-sans text-slate-800">
       {uploadError.show && (
@@ -227,34 +401,52 @@ export default function SereneCinematicPresetPage() {
       <main className="order-1 lg:order-2 h-[48dvh] lg:h-full w-full flex-1 flex flex-col items-center justify-center pt-2 pb-0 px-2 lg:p-6 relative z-10 lg:bg-slate-100">
         <div className="relative flex flex-col items-center justify-center w-full h-full max-w-[460px]">
           {isExporting && (
-            <div className="w-full max-w-[320px] lg:max-w-full mb-2 lg:mb-3 bg-white/10 lg:bg-white/95 backdrop-blur-xl border border-white/20 lg:border-indigo-100 rounded-2xl p-4 shadow-2xl lg:shadow-xl transition-all">
-              <div className="flex items-center justify-between text-xs font-bold text-white lg:text-slate-800 mb-2">
-                <span className="flex items-center gap-2 text-cyan-300 lg:text-cyan-600">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> GPU Export
-                </span>
-                <span className="lg:font-mono lg:text-cyan-700 lg:bg-cyan-50 lg:px-2.5 lg:py-0.5 lg:rounded-lg lg:border lg:border-cyan-100">
-                  {renderProgress}%
-                </span>
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm rounded-[24px]">
+              <div className="w-[80%] bg-white/95 backdrop-blur-xl border border-blue-100 rounded-2xl p-5 shadow-2xl transition-all">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-3">
+                  <span className="flex items-center gap-2 text-blue-600">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Rendering GPU
+                    Frame...
+                  </span>
+                  <span className="font-mono text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">
+                    {renderProgress}%
+                  </span>
+                </div>
+                <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-500 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.max(4, renderProgress)}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 text-center mt-3 truncate">
+                  {statusMessage}
+                </p>
               </div>
-              <div className="w-full h-1.5 lg:h-2.5 bg-slate-800 lg:bg-slate-100 rounded-full overflow-hidden lg:p-0.5 lg:border lg:border-slate-200">
-                <div
-                  className="h-full bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-500 rounded-full transition-all duration-300"
-                  style={{ width: `${Math.max(4, renderProgress)}%` }}
-                />
-              </div>
-              <p className="text-[10px] lg:text-[11px] text-slate-300 lg:text-slate-500 text-center mt-2 truncate">
-                {statusMessage}
-              </p>
+            </div>
+          )}
+
+          {isUpdating && !isExporting && (
+            <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm rounded-[24px] pointer-events-none transition-opacity duration-150">
+              <Loader2 className="w-8 h-8 text-white animate-spin opacity-80" />
             </div>
           )}
 
           <div className="h-full max-h-[85%] lg:max-h-[80vh] aspect-[9/16] rounded-2xl lg:rounded-[24px] overflow-hidden bg-black relative flex items-center justify-center shadow-2xl ring-1 ring-white/10 lg:ring-slate-900/10">
             <Player
-              key={playerKey}
               ref={playerRef}
               component={SereneCinematicComposition}
-              inputProps={{ videos: uploadedVideos }}
-              durationInFrames={TOTAL_FRAMES}
+              inputProps={{
+                videos: uploadedVideos,
+                showOutro: isOutroEnabled,
+                outroData: {
+                  ...outroData,
+                  styleType:
+                    outroData.styleType === "none"
+                      ? "classic"
+                      : outroData.styleType,
+                },
+              }}
+              durationInFrames={activeTotalFrames}
               fps={fps}
               compositionWidth={1080}
               compositionHeight={1920}
@@ -279,7 +471,7 @@ export default function SereneCinematicPresetPage() {
                 <div className="w-full flex items-end justify-between pb-2 lg:pb-3 h-full">
                   <div className="flex-1 max-w-[70%] lg:max-w-[76%] text-white drop-shadow-md space-y-1.5 pl-1 mb-2 lg:mb-0">
                     <div className="flex items-center gap-1.5 lg:gap-2">
-                      <div className="h-6 w-6 lg:h-7 lg:w-7 rounded-full border border-white/60 bg-gradient-to-tr from-cyan-400 to-sky-600 p-[1.5px]">
+                      <div className="h-6 w-6 lg:h-7 lg:w-7 rounded-full border border-white/60 bg-gradient-to-tr from-cyan-400 to-blue-600 p-[1.5px]">
                         <div className="h-full w-full rounded-full bg-slate-900 flex items-center justify-center">
                           <span className="text-[7px] lg:text-[9px] font-bold text-white">
                             RS
@@ -312,7 +504,9 @@ export default function SereneCinematicPresetPage() {
             >
               <div
                 className="h-full bg-cyan-500 rounded-full transition-all duration-75"
-                style={{ width: `${(currentFrame / TOTAL_FRAMES) * 100}%` }}
+                style={{
+                  width: `${(currentFrame / activeTotalFrames) * 100}%`,
+                }}
               />
             </div>
             <div className="flex items-center justify-between">
@@ -328,7 +522,7 @@ export default function SereneCinematicPresetPage() {
               </button>
               <span className="text-[11px] lg:text-xs font-mono font-medium text-slate-300 lg:text-slate-500">
                 {formatTime(currentFrame / fps)} /{" "}
-                {formatTime(TOTAL_FRAMES / fps)}
+                {formatTime(activeTotalFrames / fps)}
               </span>
             </div>
           </div>
@@ -336,117 +530,454 @@ export default function SereneCinematicPresetPage() {
       </main>
 
       <aside className="order-2 lg:order-1 h-[52dvh] lg:h-full w-full lg:w-[480px] flex flex-col bg-white shadow-[0_-10px_40px_rgba(0,0,0,0.2)] rounded-t-[2rem] lg:rounded-none relative z-20 overflow-hidden">
-        <div className="flex-1 overflow-y-auto w-full pb-24 lg:pb-32 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-100 pt-4 pb-4 px-4 lg:px-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Link
-                  href="/templates"
-                  className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-900 bg-slate-50 transition-colors cursor-pointer"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </Link>
-                <h1 className="text-base lg:text-xl font-black tracking-tight text-slate-950">
-                  Serene Cinematic Drift
-                </h1>
-              </div>
+        <div className="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-slate-100 pt-3 pb-3 px-4 lg:px-6 space-y-4">
+          <div className="w-full flex justify-center pb-1 lg:hidden">
+            <div className="w-12 h-1 bg-slate-200 rounded-full" />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Link
+                href="/templates"
+                className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-900 bg-slate-50 transition-colors cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </Link>
+              <h1 className="text-base lg:text-xl font-black tracking-tight text-slate-950">
+                Serene Cinematic
+              </h1>
             </div>
-
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 lg:mx-0 lg:px-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-              <input
-                type="file"
-                ref={videoInputRef}
-                onChange={handleVideoUpload}
-                multiple
-                accept="video/mp4,video/x-m4v,video/*"
-                className="hidden"
-              />
-              <button
-                onClick={() => videoInputRef.current?.click()}
-                className="flex-shrink-0 flex items-center gap-1.5 rounded-full border border-cyan-200 bg-cyan-50 py-1.5 px-3.5 text-[11px] font-bold text-cyan-700 hover:bg-cyan-100 cursor-pointer whitespace-nowrap"
+            <div className="relative">
+              <select
+                value={resolution}
+                onChange={(e) => setResolution(e.target.value as any)}
+                className="appearance-none rounded-full border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-[11px] font-bold text-slate-700 outline-none focus:ring-2 focus:ring-cyan-500/20 cursor-pointer pr-7"
               >
-                <VideoIcon className="w-3.5 h-3.5" /> + Add Videos
-              </button>
-
-              <div className="flex-shrink-0 flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 py-1.5 px-3.5 text-[11px] font-bold text-slate-700 whitespace-nowrap">
-                <Music className="w-3.5 h-3.5 text-cyan-600" /> ReelAudio-11
-              </div>
-              <button
-                onClick={() => setShowInstagramOverlay(!showInstagramOverlay)}
-                className={`flex-shrink-0 flex items-center gap-1.5 rounded-full border py-1.5 px-3.5 text-[11px] font-bold whitespace-nowrap cursor-pointer ${showInstagramOverlay ? "border-pink-300 bg-pink-500 text-white" : "border-slate-200 bg-slate-50 text-slate-700"}`}
-              >
-                {showInstagramOverlay ? (
-                  <EyeOff className="w-3.5 h-3.5" />
-                ) : (
-                  <Eye className="w-3.5 h-3.5 text-pink-500" />
-                )}{" "}
-                IG UI
-              </button>
-              <div className="flex-shrink-0 relative">
-                <select
-                  value={resolution}
-                  onChange={(e) => setResolution(e.target.value as any)}
-                  className="appearance-none rounded-full border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-[11px] font-bold text-slate-700 outline-none focus:ring-2 focus:ring-cyan-500/20 cursor-pointer pr-7"
-                >
-                  <option value="1080p">1080p</option>
-                  <option value="2k">2K</option>
-                  <option value="4k">4K</option>
-                </select>
-                <Settings2 className="w-3 h-3 text-slate-400 absolute right-2.5 top-2 pointer-events-none" />
-              </div>
+                <option value="1080p">1080p</option>
+                <option value="2k">2K</option>
+                <option value="4k">4K</option>
+              </select>
+              <Settings2 className="w-3 h-3 text-slate-400 absolute right-2.5 top-2 pointer-events-none" />
             </div>
           </div>
 
-          <div className="px-4 lg:px-6 pt-4 space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-2.5">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                <Layers className="w-3.5 h-3.5 text-cyan-600" /> Sequence
-                Pattern
-              </div>
-              <p className="text-[11px] text-slate-600">
-                8 Video Clips with smooth cross-fades and cinematic drifts.
-              </p>
-              <p className="text-[10px] text-cyan-700 font-bold">
-                Videos uploaded: {uploadedVideos.length}/8. Sequence will loop
-                if you add fewer than 8.
-              </p>
-            </div>
+          <div className="flex p-1 bg-slate-100 rounded-xl">
+            <button
+              onClick={() => setActiveTab("media")}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${activeTab === "media" ? "bg-white text-cyan-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              Media & Layers
+            </button>
+            <button
+              onClick={() => setActiveTab("branding")}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${activeTab === "branding" ? "bg-white text-cyan-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              Brand Outro
+              {isOutroEnabled && (
+                <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+              )}
+            </button>
+          </div>
+        </div>
 
-            <div className="grid grid-cols-3 lg:grid-cols-4 gap-2">
-              {uploadedVideos.length === 0 ? (
-                <div className="col-span-3 lg:col-span-4 py-8 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
-                  <VideoIcon className="w-8 h-8 mb-2 text-slate-300" />
-                  <span className="text-xs font-medium">
-                    Upload videos to get started
-                  </span>
+        <div className="flex-1 overflow-y-auto w-full pb-24 lg:pb-32 px-4 lg:px-6 pt-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          {activeTab === "media" && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <div className="flex gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden">
+                <input
+                  type="file"
+                  ref={videoInputRef}
+                  onChange={handleVideoUpload}
+                  multiple
+                  accept="video/mp4,video/x-m4v,video/*"
+                  className="hidden"
+                />
+                <button
+                  onClick={() => videoInputRef.current?.click()}
+                  className="flex-shrink-0 flex items-center gap-1.5 rounded-full border border-cyan-200 bg-cyan-50 py-1.5 px-3.5 text-[11px] font-bold text-cyan-700 hover:bg-cyan-100 cursor-pointer whitespace-nowrap"
+                >
+                  <VideoIcon className="w-3.5 h-3.5" /> + Add Videos
+                </button>
+
+                <div className="flex-shrink-0 flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 py-1.5 px-3.5 text-[11px] font-bold text-slate-700 whitespace-nowrap">
+                  <Music className="w-3.5 h-3.5 text-cyan-600" /> ReelAudio-11
                 </div>
-              ) : (
-                uploadedVideos.map((url, idx) => (
-                  <div
-                    key={idx}
-                    className="group relative aspect-[9/14] rounded-xl overflow-hidden border-2 border-cyan-400 bg-slate-100 shadow-sm"
-                  >
-                    <video
-                      src={url}
-                      className="w-full h-full object-cover"
-                      muted
-                      loop
-                      playsInline
-                    />
-                    <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-[8px] font-bold text-white bg-black/60 backdrop-blur">
-                      Clip {idx + 1}
+                <button
+                  onClick={() => setShowInstagramOverlay(!showInstagramOverlay)}
+                  className={`flex-shrink-0 flex items-center gap-1.5 rounded-full border py-1.5 px-3.5 text-[11px] font-bold whitespace-nowrap cursor-pointer ${showInstagramOverlay ? "border-pink-300 bg-pink-500 text-white" : "border-slate-200 bg-slate-50 text-slate-700"}`}
+                >
+                  {showInstagramOverlay ? (
+                    <EyeOff className="w-3.5 h-3.5" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5 text-pink-500" />
+                  )}{" "}
+                  IG UI
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 lg:grid-cols-4 gap-2">
+                {uploadedVideos.length === 0 ? (
+                  <div className="col-span-3 lg:col-span-4 py-8 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
+                    <VideoIcon className="w-8 h-8 mb-2 text-slate-300" />
+                    <span className="text-xs font-medium">
+                      Upload videos to get started
                     </span>
-                    <button
-                      onClick={() => removeVideo(idx)}
-                      className="absolute inset-0 bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                    >
-                      <Trash2 className="w-5 h-5 text-red-400" />
-                    </button>
                   </div>
-                ))
+                ) : (
+                  uploadedVideos.map((url, idx) => (
+                    <div
+                      key={idx}
+                      className="group relative aspect-[9/14] rounded-xl overflow-hidden border-2 border-cyan-400 bg-slate-100 shadow-sm"
+                    >
+                      <video
+                        src={url}
+                        className="w-full h-full object-cover"
+                        muted
+                        loop
+                        playsInline
+                      />
+                      <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-[8px] font-bold text-white bg-black/60 backdrop-blur">
+                        Clip {idx + 1}
+                      </span>
+                      <button
+                        onClick={() => removeVideo(idx)}
+                        className="absolute inset-0 bg-black/40 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      >
+                        <Trash2 className="w-5 h-5 text-red-400" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "branding" && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                  <span>Outro Card Layout</span>
+                  {isOutroEnabled && (
+                    <span className="text-[9px] text-cyan-500 bg-cyan-50 px-1.5 rounded">
+                      + 5 SEC
+                    </span>
+                  )}
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {OUTRO_STYLES.map((style) => {
+                    const isSelected = outroData.styleType === style.id;
+                    const isNone = style.id === "none";
+                    return (
+                      <button
+                        key={style.id}
+                        onClick={() => {
+                          setOutroData((prev) => ({
+                            ...prev,
+                            styleType: style.id,
+                          }));
+                          if (!isNone) ensureOutroVisible(40);
+                        }}
+                        className={`flex-grow py-2 px-3 text-[11px] font-bold rounded-xl border transition-all cursor-pointer whitespace-nowrap text-center ${isSelected ? (isNone ? "bg-red-50 text-red-600 border-red-200 shadow-sm" : "bg-cyan-600 text-white border-cyan-600 shadow-md") : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}
+                      >
+                        {style.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {isOutroEnabled && (
+                <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-300">
+                  <div className="p-4 bg-cyan-50/50 border border-cyan-100 rounded-2xl space-y-4">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-cyan-700">
+                      <Sparkles className="w-3.5 h-3.5" /> Animation FX
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase">
+                          Reel Transition
+                        </label>
+                        <select
+                          value={outroData.transitionType}
+                          onChange={(e) => {
+                            setOutroData((prev) => ({
+                              ...prev,
+                              transitionType: e.target.value as any,
+                            }));
+                            forcePreviewTransition();
+                          }}
+                          className="w-full text-[11px] font-bold py-1.5 px-2 rounded-lg border border-slate-200 cursor-pointer"
+                        >
+                          <option value="cut">Instant Cut</option>
+                          <option value="fade">Smooth Fade</option>
+                          <option value="circle">Expanding Circle</option>
+                          <option value="slice">Diagonal Slice Wipe</option>
+                          <option value="slide">Slide Up</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase">
+                          Logo Anim
+                        </label>
+                        <select
+                          value={outroData.logoAnim}
+                          onChange={(e) => {
+                            setOutroData((prev) => ({
+                              ...prev,
+                              logoAnim: e.target.value as any,
+                            }));
+                            ensureOutroVisible();
+                          }}
+                          className="w-full text-[11px] font-bold py-1.5 px-2 rounded-lg border border-slate-200 cursor-pointer"
+                        >
+                          <option value="spring">Spring Bounce</option>
+                          <option value="drop">Drop In</option>
+                          <option value="spin">Spin Reveal</option>
+                          <option value="fade">Simple Fade</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase">
+                          Text Anim
+                        </label>
+                        <select
+                          value={outroData.textAnim}
+                          onChange={(e) => {
+                            setOutroData((prev) => ({
+                              ...prev,
+                              textAnim: e.target.value as any,
+                            }));
+                            ensureOutroVisible(60);
+                          }}
+                          className="w-full text-[11px] font-bold py-1.5 px-2 rounded-lg border border-slate-200 cursor-pointer"
+                        >
+                          <option value="slideUp">Slide Up Fade</option>
+                          <option value="scale">Scale In</option>
+                          <option value="fade">Simple Fade</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase">
+                          Anim Speed (Frames)
+                        </label>
+                        <input
+                          type="range"
+                          min="15"
+                          max="60"
+                          value={outroData.animSpeed}
+                          onChange={(e) => {
+                            setOutroData((prev) => ({
+                              ...prev,
+                              animSpeed: Number(e.target.value),
+                            }));
+                            ensureOutroVisible(60);
+                          }}
+                          className="w-full accent-cyan-600 mt-1 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`grid ${needsBgImage || needsColorPicker || needsGradientPicker ? "grid-cols-2" : "grid-cols-1"} gap-3`}
+                  >
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Brand Logo
+                      </label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        ref={logoInputRef}
+                        className="hidden"
+                        onChange={(e) => handleOutroImageUpload(e, "logo")}
+                      />
+                      <div
+                        onClick={() => logoInputRef.current?.click()}
+                        className="aspect-square w-full rounded-2xl border-2 border-dashed border-slate-300 bg-white hover:border-cyan-400 hover:bg-cyan-50 transition-colors flex flex-col items-center justify-center gap-1 cursor-pointer overflow-hidden relative p-2"
+                      >
+                        {outroData.logoUrl ? (
+                          <img
+                            src={outroData.logoUrl}
+                            alt="Logo"
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <>
+                            <ImageIcon className="w-5 h-5 text-slate-400" />
+                            <span className="text-[9px] font-bold text-slate-500">
+                              Upload Logo
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {needsBgImage && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          9:16 Background
+                        </label>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          ref={bgInputRef}
+                          className="hidden"
+                          onChange={(e) => handleOutroImageUpload(e, "bg")}
+                        />
+                        <div
+                          onClick={() => bgInputRef.current?.click()}
+                          className="aspect-square w-full rounded-2xl border-2 border-dashed border-slate-300 bg-white hover:border-cyan-400 hover:bg-cyan-50 transition-colors flex flex-col items-center justify-center gap-1 cursor-pointer overflow-hidden relative"
+                        >
+                          {outroData.bgUrl ? (
+                            <img
+                              src={outroData.bgUrl}
+                              alt="BG"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <>
+                              <ImageIcon className="w-5 h-5 text-slate-400" />
+                              <span className="text-[9px] font-bold text-slate-500">
+                                Upload Image
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {needsColorPicker && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Background Color
+                        </label>
+                        <div className="aspect-square w-full rounded-2xl border-2 border-slate-200 bg-white flex flex-col items-center justify-center gap-2 overflow-hidden relative p-4">
+                          <input
+                            type="color"
+                            value={outroData.customBgColor}
+                            onChange={(e) => {
+                              setOutroData((prev) => ({
+                                ...prev,
+                                customBgColor: e.target.value,
+                              }));
+                              ensureOutroVisible();
+                            }}
+                            className="w-12 h-12 rounded cursor-pointer border-0 p-0 bg-transparent"
+                          />
+                          <span className="text-[9px] font-bold text-slate-500 uppercase">
+                            {outroData.customBgColor}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {needsGradientPicker && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Select Gradient
+                        </label>
+                        <div className="aspect-square w-full rounded-2xl border-2 border-slate-200 bg-white flex flex-wrap content-center justify-center gap-2 overflow-hidden relative p-3">
+                          {PRESET_GRADIENTS.map((grad, i) => (
+                            <button
+                              key={i}
+                              onClick={() => {
+                                setOutroData((prev) => ({
+                                  ...prev,
+                                  gradientIndex: i,
+                                }));
+                                ensureOutroVisible();
+                              }}
+                              className={`w-8 h-8 rounded-full border-2 transition-transform cursor-pointer ${outroData.gradientIndex === i ? "border-cyan-600 scale-110" : "border-transparent scale-100"}`}
+                              style={{ background: grad }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-4 pt-2 border-t border-slate-100">
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Contact & Address
+                        </label>
+                        <span className="text-[9px] font-bold text-cyan-500 bg-cyan-50 px-1.5 rounded">
+                          {outroData.contactTextSize}px
+                        </span>
+                      </div>
+                      <textarea
+                        value={outroData.contactText}
+                        onChange={(e) => {
+                          setOutroData((prev) => ({
+                            ...prev,
+                            contactText: e.target.value,
+                          }));
+                          ensureOutroVisible(60);
+                        }}
+                        rows={2}
+                        className="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 bg-slate-50 focus:bg-white transition-all"
+                        placeholder="123 Business Road, Suite 100&#10;Hyderabad, TG 500034"
+                      />
+                      <input
+                        type="range"
+                        min="15"
+                        max="60"
+                        value={outroData.contactTextSize}
+                        onChange={(e) => {
+                          setOutroData((prev) => ({
+                            ...prev,
+                            contactTextSize: Number(e.target.value),
+                          }));
+                          ensureOutroVisible(60);
+                        }}
+                        className="w-full accent-cyan-600 cursor-pointer mt-1"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Social Handle
+                        </label>
+                        <span className="text-[9px] font-bold text-cyan-500 bg-cyan-50 px-1.5 rounded">
+                          {outroData.socialTextSize}px
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        value={outroData.socialHandle}
+                        onChange={(e) => {
+                          setOutroData((prev) => ({
+                            ...prev,
+                            socialHandle: e.target.value,
+                          }));
+                          ensureOutroVisible(60);
+                        }}
+                        className="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 bg-slate-50 focus:bg-white transition-all"
+                        placeholder="@yourbrand"
+                      />
+                      <input
+                        type="range"
+                        min="15"
+                        max="60"
+                        value={outroData.socialTextSize}
+                        onChange={(e) => {
+                          setOutroData((prev) => ({
+                            ...prev,
+                            socialTextSize: Number(e.target.value),
+                          }));
+                          ensureOutroVisible(60);
+                        }}
+                        className="w-full accent-cyan-600 cursor-pointer mt-1"
+                      />
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
-          </div>
+          )}
         </div>
 
         <div className="absolute bottom-0 left-0 w-full bg-white/95 backdrop-blur-md border-t border-slate-200 p-3 lg:p-4 shadow-[0_-4px_15px_rgba(0,0,0,0.05)] flex flex-col gap-2 z-30">
