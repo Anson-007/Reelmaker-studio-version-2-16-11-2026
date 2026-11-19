@@ -9,7 +9,6 @@ import {
   useVideoConfig,
 } from "remotion";
 
-// Supported scene transition presets across Remotion compositions
 export type TransitionPreset =
   | "optical-dissolve"
   | "droplet-reveal"
@@ -22,10 +21,8 @@ export type TransitionPreset =
   | "vertical-blur-snap"
   | "thumb-diagonal";
 
-// Continuous slide motion modes
 export type SlideMotionPreset = "gyro-float" | "handheld-shake" | "none";
 
-// High-velocity speed-ramp visual styles
 export type SpeedRampStyle =
   | "flash-zoom"
   | "vertical-streak"
@@ -45,10 +42,6 @@ interface SceneTransitionProps {
   diagonalDirection?: "right-top" | "left-bottom";
 }
 
-/**
- * Multi-preset scene transition component compatible with Remotion Player
- * and browser GPU export pipelines.
- */
 export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
   fromSrc,
   toSrc,
@@ -62,13 +55,11 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
   const isTransitioning =
     fromSrc && localFrame >= 0 && localFrame < durationInFrames;
 
-  // Normalized 0..1 transition progress across durationInFrames
   const progress = interpolate(localFrame, [0, durationInFrames], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
 
-  // Shared optical flash and exposure recovery curves
   const exposureBrightness = interpolate(
     localFrame,
     [0, 2, 8, 18],
@@ -86,7 +77,6 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
     extrapolateRight: "clamp",
   });
 
-  // Diagonal whip + directional drift transition
   if (preset === "thumb-diagonal") {
     const dirSign = diagonalDirection === "right-top" ? 1 : -1;
     const whipProgress = interpolate(localFrame, [0, 5], [0, 1], {
@@ -197,7 +187,6 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
     );
   }
 
-  // Horizontal directional blur snap
   if (preset === "horizontal-blur-snap") {
     const snapFrames = 7;
     const isSnapping = localFrame >= 0 && localFrame < snapFrames;
@@ -265,7 +254,6 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
     );
   }
 
-  // Vertical directional blur snap
   if (preset === "vertical-blur-snap") {
     const snapFrames = 7;
     const isSnapping = localFrame >= 0 && localFrame < snapFrames;
@@ -333,7 +321,6 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
     );
   }
 
-  // Screen-blended ghost echo double-exposure transition
   if (preset === "double-exposure") {
     const inOpacity = isTransitioning
       ? interpolate(progress, [0, 0.75, 1], [0, 0.88, 1], {
@@ -404,7 +391,6 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
     );
   }
 
-  // SVG turbulence + horizontal blur wave whip
   if (preset === "wave-whip") {
     const waveFrames = 7;
     const isWaving = localFrame >= 0 && localFrame < waveFrames;
@@ -481,7 +467,6 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
     );
   }
 
-  // Default optical dissolve / exposure cross-fade
   if (preset === "optical-dissolve" || !isTransitioning) {
     const inOpacity = isTransitioning
       ? interpolate(localFrame, [0, 5], [0, 1], { extrapolateRight: "clamp" })
@@ -526,22 +511,28 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
     );
   }
 
-  // Multi-stroke feathered brush sweep mask reveal
+  // Web-renderer-safe brush sweep reveal (avoids CSS mask-image URL fetch)
   if (preset === "brush-sweep") {
-    const uniqueMask = `brush-sweep-mask-${maskId}`;
-    const strokes = [
-      { x1: -260, y1: 220, x2: 1340, y2: -60, delay: 0.0, width: 520 },
-      { x1: 1340, y1: 520, x2: -260, y2: 780, delay: 0.08, width: 540 },
-      { x1: -260, y1: 1020, x2: 1340, y2: 760, delay: 0.04, width: 560 },
-      { x1: 1340, y1: 1320, x2: -260, y2: 1580, delay: 0.12, width: 540 },
-      { x1: -260, y1: 1860, x2: 1340, y2: 1620, delay: 0.06, width: 560 },
-    ];
     const incomingZoom = interpolate(progress, [0, 1], [1.08, targetScale], {
       easing: Easing.out(Easing.cubic),
     });
+    const inOpacity = interpolate(progress, [0, 0.85, 1], [0, 0.92, 1], {
+      easing: Easing.inOut(Easing.cubic),
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    });
+    const sweepShiftX = interpolate(progress, [0, 1], [36, 0], {
+      easing: Easing.out(Easing.cubic),
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    });
+    const sweepBlur = interpolate(progress, [0, 0.4, 1], [14, 6, 0], {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    });
 
     return (
-      <AbsoluteFill>
+      <AbsoluteFill style={{ backgroundColor: "#000000", overflow: "hidden" }}>
         <AbsoluteFill>
           <img
             src={fromSrc}
@@ -549,55 +540,16 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
         </AbsoluteFill>
-        <svg width="0" height="0" style={{ position: "absolute" }}>
-          <defs>
-            <filter id={`feather-${uniqueMask}`}>
-              <feGaussianBlur stdDeviation="22" />
-            </filter>
-            <mask id={uniqueMask}>
-              <rect width="1080" height="1920" fill="black" />
-              <g filter={`url(#feather-${uniqueMask})`}>
-                {strokes.map((s, i) => {
-                  const p = interpolate(
-                    progress,
-                    [s.delay, Math.min(1, s.delay + 0.78)],
-                    [0, 1],
-                    {
-                      easing: Easing.inOut(Easing.cubic),
-                      extrapolateLeft: "clamp",
-                      extrapolateRight: "clamp",
-                    },
-                  );
-                  const dashOffset = interpolate(p, [0, 1], [1900, 0]);
-                  return (
-                    <line
-                      key={i}
-                      x1={s.x1}
-                      y1={s.y1}
-                      x2={s.x2}
-                      y2={s.y2}
-                      stroke="white"
-                      strokeWidth={s.width}
-                      strokeLinecap="round"
-                      strokeDasharray="1900"
-                      strokeDashoffset={dashOffset}
-                    />
-                  );
-                })}
-              </g>
-            </mask>
-          </defs>
-        </svg>
         <AbsoluteFill
           style={{
-            mask: `url(#${uniqueMask})`,
-            WebkitMask: `url(#${uniqueMask})`,
-            transform: `scale(${incomingZoom})`,
-            filter: `brightness(${interpolate(
+            opacity: inOpacity,
+            transform: `translate3d(${sweepShiftX.toFixed(1)}px, 0px, 0px) scale(${incomingZoom.toFixed(4)})`,
+            filter: `blur(${sweepBlur.toFixed(1)}px) brightness(${interpolate(
               progress,
               [0, 0.25, 1],
               [1.35, 1.15, 1],
             )})`,
+            willChange: "transform, filter",
           }}
         >
           {toSrc && (
@@ -612,20 +564,25 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
     );
   }
 
-  // Soft expanding droplet mask reveal
+  // Web-renderer-safe droplet reveal using inline SVG <clipPath> (avoids mask-image URL fetch)
   if (preset === "droplet-reveal") {
-    const uniqueMask = `droplet-mask-${maskId}`;
+    const uniqueClip = `droplet-clip-${maskId}`;
     const droplets = [
-      { cx: 340, cy: 360, delay: 0.0, maxR: 950 },
-      { cx: 740, cy: 480, delay: 0.06, maxR: 900 },
-      { cx: 480, cy: 860, delay: 0.03, maxR: 1050 },
-      { cx: 820, cy: 920, delay: 0.09, maxR: 850 },
-      { cx: 260, cy: 1320, delay: 0.05, maxR: 950 },
-      { cx: 680, cy: 1460, delay: 0.02, maxR: 1000 },
+      { cx: 340, cy: 360, delay: 0.0, maxR: 1150 },
+      { cx: 740, cy: 480, delay: 0.06, maxR: 1100 },
+      { cx: 480, cy: 860, delay: 0.03, maxR: 1250 },
+      { cx: 820, cy: 920, delay: 0.09, maxR: 1050 },
+      { cx: 260, cy: 1320, delay: 0.05, maxR: 1150 },
+      { cx: 680, cy: 1460, delay: 0.02, maxR: 1200 },
     ];
+    const revealZoom = interpolate(progress, [0, 1], [1.06, targetScale], {
+      easing: Easing.out(Easing.cubic),
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    });
 
     return (
-      <AbsoluteFill>
+      <AbsoluteFill style={{ backgroundColor: "#000000", overflow: "hidden" }}>
         <AbsoluteFill>
           <img
             src={fromSrc}
@@ -633,18 +590,24 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
         </AbsoluteFill>
-        <svg width="0" height="0" style={{ position: "absolute" }}>
-          <defs>
-            <filter id={`soft-${uniqueMask}`}>
-              <feGaussianBlur stdDeviation="18" />
-            </filter>
-            <mask id={uniqueMask}>
-              <rect width="1080" height="1920" fill="black" />
-              <g filter={`url(#soft-${uniqueMask})`}>
+        {toSrc && (
+          <svg
+            viewBox="0 0 1080 1920"
+            width="1080"
+            height="1920"
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+            }}
+          >
+            <defs>
+              <clipPath id={uniqueClip}>
                 {droplets.map((d, i) => {
                   const p = interpolate(
                     progress,
-                    [d.delay, Math.min(1, d.delay + 0.75)],
+                    [d.delay, Math.min(1, d.delay + 0.78)],
                     [0, 1],
                     {
                       easing: Easing.out(Easing.cubic),
@@ -657,36 +620,31 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
                       key={i}
                       cx={d.cx}
                       cy={d.cy}
-                      r={p * d.maxR}
-                      fill="white"
+                      r={Math.max(0, p * d.maxR)}
                     />
                   );
                 })}
-              </g>
-            </mask>
-          </defs>
-        </svg>
-        <AbsoluteFill
-          style={{
-            mask: `url(#${uniqueMask})`,
-            WebkitMask: `url(#${uniqueMask})`,
-            transform: `scale(${targetScale})`,
-            filter: `brightness(${exposureBrightness})`,
-          }}
-        >
-          {toSrc && (
-            <img
-              src={toSrc}
-              alt="Incoming"
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          )}
-        </AbsoluteFill>
+              </clipPath>
+            </defs>
+            <g
+              clipPath={`url(#${uniqueClip})`}
+              transform={`translate(${((1080 * (1 - revealZoom)) / 2).toFixed(1)}, ${((1920 * (1 - revealZoom)) / 2).toFixed(1)}) scale(${revealZoom.toFixed(4)})`}
+            >
+              <image
+                href={toSrc}
+                x="0"
+                y="0"
+                width="1080"
+                height="1920"
+                preserveAspectRatio="xMidYMid slice"
+              />
+            </g>
+          </svg>
+        )}
       </AbsoluteFill>
     );
   }
 
-  // Horizontal whip-pan with motion blur
   if (preset === "whip-pan") {
     const outX = interpolate(progress, [0, 1], [0, -100]);
     const inX = interpolate(progress, [0, 1], [100, 0]);
@@ -716,7 +674,6 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
     );
   }
 
-  // Diagonal feathered wipe fallback
   const wipe = interpolate(progress, [0, 1], [-25, 125]);
   return (
     <AbsoluteFill>
@@ -746,7 +703,6 @@ export const SceneTransitionFX: React.FC<SceneTransitionProps> = ({
   );
 };
 
-// Kinetic typography data structures for the "Believe yourself" beat sequence
 interface GlitchToken {
   text: string;
   color: "white" | "red";
@@ -890,9 +846,6 @@ const BELIEVE_GLITCH_CARDS: GlitchBeatCard[] = [
   },
 ];
 
-/**
- * CRT RGB-split kinetic text with horizontal slice tears and scanlines.
- */
 export const UnderdogGlitchTextFX: React.FC<{ frame: number }> = ({
   frame,
 }) => {
@@ -997,7 +950,6 @@ export const UnderdogGlitchTextFX: React.FC<{ frame: number }> = ({
     </div>
   );
 
-  // Deterministic slice offsets to keep render output consistent across frames
   const topSliceShift =
     ((frame * 19) % 2 === 0 ? 1 : -1) * 32 * glitchIntensity;
   const midSliceShift =
@@ -1079,7 +1031,6 @@ export const UnderdogGlitchTextFX: React.FC<{ frame: number }> = ({
         </>
       )}
 
-      {/* CRT scanline & sub-pixel grid */}
       <AbsoluteFill
         style={{
           backgroundImage: `
@@ -1091,7 +1042,6 @@ export const UnderdogGlitchTextFX: React.FC<{ frame: number }> = ({
         }}
       />
 
-      {/* Edge vignette */}
       <AbsoluteFill
         style={{
           background:
@@ -1104,9 +1054,6 @@ export const UnderdogGlitchTextFX: React.FC<{ frame: number }> = ({
   );
 };
 
-/**
- * Diagonal 135-degree wipe with a glowing light-beam streak.
- */
 export const DiagonalBeamWipeFX: React.FC<{
   fromSrc: string | null;
   toSrc: string | null;
@@ -1184,9 +1131,6 @@ export const DiagonalBeamWipeFX: React.FC<{
   );
 };
 
-/**
- * Center-expanding card reveal over a dimmed/blurred backdrop, followed by a warm flash.
- */
 export const CenterBoxFlashRevealFX: React.FC<{
   backdropSrc: string | null;
   revealSrc: string | null;
@@ -1287,9 +1231,6 @@ export const CenterBoxFlashRevealFX: React.FC<{
   );
 };
 
-/**
- * Intro hold with gradual zoom and a pre-drop flash at the end of the hold.
- */
 export const SpeedRampIntroFX: React.FC<{
   src: string | null;
   frame: number;
@@ -1353,9 +1294,6 @@ export const SpeedRampIntroFX: React.FC<{
   );
 };
 
-/**
- * Fast-cut slide with directional blur, scale punch, and end-of-slot exposure dip.
- */
 export const SpeedRampSlideFX: React.FC<{
   fromSrc: string | null;
   toSrc: string | null;
@@ -1548,9 +1486,6 @@ export const SpeedRampSlideFX: React.FC<{
   );
 };
 
-/**
- * Split-frame film roll and warm exposure burn overlay.
- */
 export const FilmStripBurnTransitionFX: React.FC<{
   fromSrc: string | null;
   toSrc: string | null;
@@ -1696,9 +1631,6 @@ export const FilmStripBurnTransitionFX: React.FC<{
   );
 };
 
-/**
- * Animated search bar dock and two-wave bento card layout.
- */
 export const GoogleSearchBentoFX: React.FC<{
   photos: (string | null)[];
   frame: number;
@@ -2116,20 +2048,17 @@ export const RadialTunnelIntroFX: React.FC<{
 }> = ({ src, frame, grayscale = true }) => {
   if (frame < 0 || frame >= 60) return null;
 
-  // Gradual scale-up from 1.0 to 1.08 over the 60-frame intro
   const zoomScale = interpolate(frame, [0, 60], [1.0, 1.08], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
 
-  // Subtle two-frequency float and gentle roll tilt
   const floatX =
     Math.sin(frame * 0.09) * 10 + Math.cos(frame * 0.18) * 3;
   const floatY =
     Math.cos(frame * 0.075) * 8 + Math.sin(frame * 0.16) * 2.5;
   const tiltDeg = Math.sin(frame * 0.06) * 0.6;
 
-  // Brief exposure lift around the mid-intro beat
   const snapBrightness = interpolate(
     frame,
     [12, 16, 25, 34],
@@ -2159,7 +2088,6 @@ export const RadialTunnelIntroFX: React.FC<{
         )}
       </AbsoluteFill>
 
-      {/* Soft dark vignette around frame edges */}
       <AbsoluteFill
         style={{
           background:
@@ -2171,9 +2099,6 @@ export const RadialTunnelIntroFX: React.FC<{
   );
 };
 
-/**
- * Vintage film dust, light leaks, and vertical scratches overlay.
- */
 export const VintageFilmOverlayFX: React.FC<{ frame: number }> = ({
   frame,
 }) => {
@@ -2358,9 +2283,6 @@ export const VintageFilmOverlayFX: React.FC<{ frame: number }> = ({
   );
 };
 
-/**
- * 3x3 tile grid that builds sequentially and transitions tiles from grayscale to color.
- */
 interface GridColorRevealIntroProps {
   photos: (string | null)[];
   frame: number;
@@ -2527,7 +2449,6 @@ export const GridColorRevealIntroFX: React.FC<GridColorRevealIntroProps> = ({
   );
 };
 
-// Beat-synced thumb motion curve configuration
 const THUMB_DESIGN_OPTION: number = 3;
 const THUMB_BEAT_MARKERS = [3, 17, 32, 46, 63, 75, 94, 105];
 const TILT_LEFT_ANGLE = -42;
@@ -2560,9 +2481,6 @@ function getCurvePoint(u: number): { x: number; y: number } {
   return { x, y };
 }
 
-/**
- * Beat-driven thumb arc indicator with trailing motion echoes.
- */
 export const ThumbBeatIntroFX: React.FC<{ frame: number }> = ({ frame }) => {
   if (frame < 0 || frame >= 122) return null;
 
@@ -2782,11 +2700,10 @@ export const ThumbBeatIntroFX: React.FC<{ frame: number }> = ({ frame }) => {
   );
 };
 
-// Module-level image cache so offscreen canvas pixelation stays instant across frames
 const loadedImageCache = new Map<string, HTMLImageElement>();
 
 /**
- * Simulated resolution selector stepping from low-res pixelated canvas to HD wipe.
+ * Interactive 144p -> 240p -> 720p -> 1080p Resolution Dropdown + Cursor Intro
  */
 export const PixelResolutionIntroFX: React.FC<{
   src: string | null;
@@ -2813,7 +2730,6 @@ export const PixelResolutionIntroFX: React.FC<{
   const pixelH = stage === 0 ? 80 : stage === 1 ? 160 : 384;
   const fallbackBlurPx = stage === 0 ? 18 : stage === 1 ? 9 : 3;
 
-  // Delay Remotion render until the source image finishes decoding
   useEffect(() => {
     if (!src) return;
     const cached = loadedImageCache.get(src);
@@ -2836,7 +2752,6 @@ export const PixelResolutionIntroFX: React.FC<{
     img.src = src;
   }, [src]);
 
-  // Draw cover-fitted image onto low-res canvas with smoothing disabled
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !imgElement || !imgElement.naturalWidth) return;
@@ -3113,9 +3028,6 @@ export const PixelResolutionIntroFX: React.FC<{
   );
 };
 
-/**
- * Staggered multi-card collage entrance with subtle ambient drift.
- */
 interface LayeredCollageIntroProps {
   photos: (string | null)[];
   frame: number;
@@ -3278,9 +3190,6 @@ export const LayeredCollageIntroFX: React.FC<LayeredCollageIntroProps> = ({
   );
 };
 
-/**
- * Four-step silent/airplane-mode UI intro sequence (15 frames per step).
- */
 export const SilentModeIntroFX: React.FC<{ frame: number }> = ({ frame }) => {
   const { fps } = useVideoConfig();
   if (frame < 0 || frame >= 60) return null;
@@ -3473,9 +3382,6 @@ export const SilentModeIntroFX: React.FC<{ frame: number }> = ({ frame }) => {
   );
 };
 
-/**
- * Horizontal slice bands that assemble sequentially with blur-to-sharp motion.
- */
 interface StaggeredSliceBuildProps {
   src: string | null;
   frame: number;
@@ -3547,9 +3453,6 @@ export const StaggeredSliceBuildFX: React.FC<StaggeredSliceBuildProps> = ({
   );
 };
 
-/**
- * Spring-animated overlay that settles into a full-screen scale reveal.
- */
 interface PopUpOverlayProps {
   src: string | null;
   frame: number;
@@ -3600,9 +3503,6 @@ export const PopUpOverlayFX: React.FC<PopUpOverlayProps> = ({
   );
 };
 
-/**
- * Slide container with fade-in/out, optional letterbox framing, and gyro/handheld motion.
- */
 interface DipToBlackSlideProps {
   src: string | null;
   localFrame: number;
@@ -3729,9 +3629,6 @@ export const DipToBlackSlideFX: React.FC<DipToBlackSlideProps> = ({
   );
 };
 
-/**
- * Brief white flash and ripple overlay driven by normalized progress (0..1).
- */
 export const InkShockwaveOverlay: React.FC<{ progress: number }> = ({
   progress,
 }) => {
