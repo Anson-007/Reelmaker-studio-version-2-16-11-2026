@@ -2053,10 +2053,8 @@ export const RadialTunnelIntroFX: React.FC<{
     extrapolateRight: "clamp",
   });
 
-  const floatX =
-    Math.sin(frame * 0.09) * 10 + Math.cos(frame * 0.18) * 3;
-  const floatY =
-    Math.cos(frame * 0.075) * 8 + Math.sin(frame * 0.16) * 2.5;
+  const floatX = Math.sin(frame * 0.09) * 10 + Math.cos(frame * 0.18) * 3;
+  const floatY = Math.cos(frame * 0.075) * 8 + Math.sin(frame * 0.16) * 2.5;
   const tiltDeg = Math.sin(frame * 0.06) * 0.6;
 
   const snapBrightness = interpolate(
